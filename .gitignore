@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Temp assets & test outputs
+assets/temp/
+*.pdf
+*.zip
+test_*.png
+test_*.pdf
+page*.png
+output_*.png
+ref_*.png
+final_*.png
+p2_*.png
+p3_*.png
+rendered_*.png
+extracted_*.png
+card_thumb.png
+.streamlit/secrets.toml

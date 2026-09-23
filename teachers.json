@@ -1,0 +1,65 @@
+[
+  {
+    "id": "raaid",
+    "name": "Mr. Raaid",
+    "subject": "Computer Science & ICT Lead",
+    "qualifications": "BSc (Hons) in Computer Science, MSc",
+    "message": "Welcome to this tutorial! Ensure all MCQs and structured questions are carefully answered. Practice consistently for exam success.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Computer Science", "ICT"]
+  },
+  {
+    "id": "sarah",
+    "name": "Dr. Sarah Perera",
+    "subject": "Biology & Chemistry Specialist",
+    "qualifications": "MBBS, MSc in Molecular Biology",
+    "message": "Focus on key definitions and step-by-step reasoning. Master past paper questions to achieve top grades in your science examinations.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Biology", "Chemistry", "Science"]
+  },
+  {
+    "id": "david",
+    "name": "Mr. David Miller",
+    "subject": "Mathematics & Physics Lead",
+    "qualifications": "BSc in Mathematics & Physics (First Class Honours)",
+    "message": "Mathematics and Physics are mastered through structured practice. Work methodically through every problem and double-check your units.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Mathematics", "Physics"]
+  },
+  {
+    "id": "rachel",
+    "name": "Ms. Rachel Fernando",
+    "subject": "Business & Accounting Lead",
+    "qualifications": "BBA (Finance), CIMA Passed Finalist",
+    "message": "Understand core commercial concepts and structure your structured answers clearly using accurate business terminology.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Business", "Accounting", "Economics"]
+  },
+  {
+    "id": "claire",
+    "name": "Ms. Claire De Silva",
+    "subject": "English Language & Literature Lead",
+    "qualifications": "BA (Hons) in English Literature, MA",
+    "message": "Analyze examination prompts critically, develop structured arguments, and articulate responses with precision and stylistic clarity.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["English"]
+  },
+  {
+    "id": "michael",
+    "name": "Mr. Michael Fernando",
+    "subject": "Economics & Commerce Specialist",
+    "qualifications": "BSc in Economics (LSE), CFA Charterholder",
+    "message": "Master economic models and data interpretation techniques. Connect theory directly to real-world applications in every question.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Economics", "Business"]
+  },
+  {
+    "id": "ananya",
+    "name": "Dr. Ananya Sharma",
+    "subject": "Pure & Applied Chemistry Lead",
+    "qualifications": "PhD in Chemistry, MChem (Oxon)",
+    "message": "Grasp chemical reaction mechanisms and quantitative stoichiometry. Practice past paper drill questions systematically.",
+    "photo": "assets/defaults/default_teacher.jpeg",
+    "subjects_taught": ["Chemistry", "Science"]
+  }
+]
