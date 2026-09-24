@@ -273,10 +273,11 @@ class NumberedCanvas(canvas.Canvas):
 
         self.saveState()
 
-        # 1. Outer Page Border (Exact Camdex Navy Border on ALL interior pages: Page 2, 3, 4...)
+        # 1. Exact Camdex Double Border (Crisp outer + inner lines with tight spacing)
         self.setStrokeColor(COLOR_PRIMARY)
-        self.setLineWidth(1.2)
+        self.setLineWidth(0.7)
         self.rect(24.0, 24.0, PAGE_WIDTH - 48.0, PAGE_HEIGHT - 48.0, stroke=1, fill=0)
+        self.rect(25.6, 25.6, PAGE_WIDTH - 51.2, PAGE_HEIGHT - 51.2, stroke=1, fill=0)
 
         # 2. Background Watermark (Only on Question pages, i.e., page_num > cover_pages_count)
         if page_num > self.cover_pages_count:
@@ -629,8 +630,8 @@ def build_tutorial_pdf(
     if include_teacher:
         cover_pages_count += 1
         
-        # Position profile in lower half matching reference layout
-        story.append(Spacer(1, 215))
+        # Position profile in exact vertical position matching reference layout
+        story.append(Spacer(1, 160))
 
         # Teacher Name (uppercase, bold navy)
         name_text = str(teacher_name or "").strip().upper()
@@ -672,9 +673,9 @@ def build_tutorial_pdf(
             parent=styles['Normal'],
             fontName=name_font,
             fontSize=34.0,
-            leading=33.0,
+            leading=32.0,
             textColor=colors.HexColor('#163A8B'),
-            spaceAfter=2
+            spaceAfter=3
         )
 
         role_style = ParagraphStyle(
@@ -682,70 +683,74 @@ def build_tutorial_pdf(
             parent=styles['Normal'],
             fontName=name_font,
             fontSize=19.5,
-            leading=20.0,
+            leading=20.5,
             textColor=colors.HexColor('#3577D6'),
-            spaceAfter=8
+            spaceAfter=10
         )
 
         qual_style = ParagraphStyle(
             'TQual',
             parent=styles['Normal'],
             fontName=body_font,
-            fontSize=8.4,
-            leading=11.6,
+            fontSize=9.0,
+            leading=12.2,
             textColor=colors.HexColor('#224483'),
-            spaceAfter=11
+            spaceAfter=12
         )
 
         bio_style = ParagraphStyle(
             'TBio',
             parent=styles['Normal'],
             fontName=body_font,
-            fontSize=8.4,
-            leading=12.5,
+            fontSize=9.0,
+            leading=13.4,
             textColor=colors.HexColor('#224483'),
             alignment=TA_JUSTIFY,
-            spaceAfter=9
+            spaceAfter=10
         )
 
+        # In reference design, the text column begins with title and role
+        qual_formatted = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', qual_text).replace("\n", "<br/>")
         info_flowables = [
             Paragraph(name_text, name_style),
             Paragraph(subject_text, role_style),
-            Paragraph(qual_text.replace("\n", "<br/>"), qual_style)
+            Paragraph(qual_formatted, qual_style)
         ]
 
         # Parse bio paragraphs
         for para in bio_raw.split("\n\n"):
             p_clean = para.strip().replace("\n", " ")
             if p_clean:
-                p_html = re.sub(r'\*\*([^*]+)\*\*', r'<b>\1</b>', p_clean)
+                p_html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', p_clean)
                 info_flowables.append(Paragraph(p_html, bio_style))
 
-        # Teacher Photo Column: renders uploaded image if provided, else clean blank space
+        # Teacher Photo Column: renders exact high-res photo card matching reference proportions
+        target_w, target_h = 215.0, 370.0
         if teacher_photo_path and os.path.exists(teacher_photo_path):
             try:
                 im = Image.open(teacher_photo_path)
                 aspect = im.width / im.height
-                target_h = 276.0
-                target_w = target_h * aspect
-                if target_w > 195.0:
-                    target_w = 195.0
-                    target_h = target_w / aspect
-                photo_flowable = PlatypusImage(teacher_photo_path, width=target_w, height=target_h, hAlign='CENTER')
+                calc_w = target_h * aspect
+                if calc_w > 218.0:
+                    calc_w = 218.0
+                    calc_h = calc_w / aspect
+                else:
+                    calc_h = target_h
+                photo_flowable = PlatypusImage(teacher_photo_path, width=calc_w, height=calc_h, hAlign='RIGHT')
             except Exception:
-                photo_flowable = PlatypusImage(teacher_photo_path, width=195, height=276, hAlign='CENTER')
+                photo_flowable = PlatypusImage(teacher_photo_path, width=target_w, height=target_h, hAlign='RIGHT')
         else:
-            # Clean blank placeholder matching exact dimensions
-            photo_flowable = Spacer(195, 276)
+            photo_flowable = Spacer(target_w, target_h)
 
-        profile_table = Table([[photo_flowable, info_flowables]], colWidths=[195, 238], hAlign='CENTER')
+        # Use BOTTOM alignment so the photo card base and description text always finish together
+        profile_table = Table([[photo_flowable, info_flowables]], colWidths=[218, 236], hAlign='CENTER')
         profile_table.setStyle(TableStyle([
-            ('LEFTPADDING', (0,0), (0,-1), 0),
+            ('LEFTPADDING', (0,0), (-1,-1), 0),
             ('RIGHTPADDING', (0,0), (-1,-1), 0),
-            ('LEFTPADDING', (1,0), (1,-1), 28),
+            ('LEFTPADDING', (1,0), (1,-1), 14),
             ('TOPPADDING', (0,0), (-1,-1), 0),
             ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
         ]))
         story.append(profile_table)

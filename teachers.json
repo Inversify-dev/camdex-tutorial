@@ -1,65 +1,93 @@
 [
   {
-    "id": "raaid",
-    "name": "Mr. Raaid",
-    "subject": "Computer Science & ICT Lead",
-    "qualifications": "BSc (Hons) in Computer Science, MSc",
-    "message": "Welcome to this tutorial! Ensure all MCQs and structured questions are carefully answered. Practice consistently for exam success.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Computer Science", "ICT"]
+    "id": "afra",
+    "name": "MS. AFRA IRSHAD",
+    "subject": "ACCOUNTING TUTOR",
+    "qualifications": "**ACCA Finalist** | Professional Level, Outstanding **Cambridge Learner Award for Cambridge A-Levels (3A*s).**",
+    "message": "Afra brings a strong academic background and a passion for teaching to the classroom. An ACCA Finalist and a BSc (Hons) in Applied Accounting graduate from Oxford Brookes University, she has also earned the Outstanding Cambridge Learner Award for Cambridge A-Levels (3A*s).\n\nWith **3 years of teaching experience** and a 100% pass rate, she understands student challenges and focuses on clear, exam-focused guidance.\n\nAt **CAMDEX Education**, Ms. Afra teaches Accounting for **Edexcel** and **Cambridge O/Level** students, helping them build confidence and achieve strong results.",
+    "photo": "assets/teachers/afra.png",
+    "subjects_taught": [
+      "Accounting"
+    ]
   },
   {
-    "id": "sarah",
-    "name": "Dr. Sarah Perera",
-    "subject": "Biology & Chemistry Specialist",
-    "qualifications": "MBBS, MSc in Molecular Biology",
-    "message": "Focus on key definitions and step-by-step reasoning. Master past paper questions to achieve top grades in your science examinations.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Biology", "Chemistry", "Science"]
+    "id": "devin",
+    "name": "MR. DEVIN SENATILLEKE",
+    "subject": "MATHEMATICS TUTOR",
+    "qualifications": "B.Com (Finance) - Edith Cowan University",
+    "message": "With more than **6 years of experience** teaching **IGCSE Mathematics under both Edexcel and Cambridge curricula**, Mr. Devin Senatilleke has consistently guided students toward exceptional outcomes.\n\nRecognized for his engaging and approachable teaching style, he focuses on strengthening core mathematical skills while fostering logical reasoning and confidence in problem-solving.\n\nAt CAMDEX Education, he instructs Mathematics from **Grade 7 to O/Levels**, encouraging students to excel academically while cultivating a deep comprehension and lasting enthusiasm for the subject.",
+    "photo": "assets/teachers/devin.png",
+    "subjects_taught": [
+      "Mathematics"
+    ]
   },
   {
-    "id": "david",
-    "name": "Mr. David Miller",
-    "subject": "Mathematics & Physics Lead",
-    "qualifications": "BSc in Mathematics & Physics (First Class Honours)",
-    "message": "Mathematics and Physics are mastered through structured practice. Work methodically through every problem and double-check your units.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Mathematics", "Physics"]
+    "id": "dimitri",
+    "name": "MR. DIMITRI COORAY",
+    "subject": "ENGLISH LANGUAGE TUTOR",
+    "qualifications": "CertTEFL \u2013 Lanka TEFL Training Institute, MA in Teaching English as a Second Language \u2013 MA in Teaching English as a Second Language (in reading), Open University of Sri Lanka, Diploma in Speech & Drama \u2013 London College of Music",
+    "message": "With **over 8 years of teaching experience in English Language, Literature in English, and IELTS**, he has also served in leadership roles as **Sectional Head \u2013 O/Level and Subject Head \u2013 Literature in English** at a prominent international school in Colombo.\n\nRenowned for his **student-centered approach**, Dimitri sir has a proven track record of fostering **academic excellence, critical thinking, and personal growth** in learners.\n\nAt **CAMDEX Education**, he teaches **Cambridge and Edexcel English** from **Grade 7 to O/Levels**, inspiring students to excel in their academics and develop a lifelong love for the English language.",
+    "photo": "assets/teachers/dimitri.png",
+    "subjects_taught": [
+      "English"
+    ]
   },
   {
-    "id": "rachel",
-    "name": "Ms. Rachel Fernando",
-    "subject": "Business & Accounting Lead",
-    "qualifications": "BBA (Finance), CIMA Passed Finalist",
-    "message": "Understand core commercial concepts and structure your structured answers clearly using accurate business terminology.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Business", "Accounting", "Economics"]
+    "id": "haani",
+    "name": "MS. HAANI NIHAL",
+    "subject": "ECONOMICS TUTOR",
+    "qualifications": "BBA specializing in Business Economics - University of Colombo (Reading), **CIMA Passed Finalist.**",
+    "message": "With a strong academic background and a passion for teaching, she is committed to helping students build a clear understanding of Economics while achieving excellent academic results. Her approach focuses on developing strong conceptual knowledge, analytical thinking, and confidence in applying economic concepts to real-world situations.\n\nShe is currently pursuing her studies at the **University of Colombo** and is a CIMA passed finalist, bringing a solid foundation in business, finance, and economics to her teaching.\n\nAt CAMDEX Education, she teaches **Cambridge and Edexcel Economics for O/Level students**, supporting them in achieving academic success while developing a practical understanding of the world of economics.",
+    "photo": "assets/teachers/haani.png",
+    "subjects_taught": [
+      "Economics"
+    ]
   },
   {
-    "id": "claire",
-    "name": "Ms. Claire De Silva",
-    "subject": "English Language & Literature Lead",
-    "qualifications": "BA (Hons) in English Literature, MA",
-    "message": "Analyze examination prompts critically, develop structured arguments, and articulate responses with precision and stylistic clarity.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["English"]
+    "id": "prasanna",
+    "name": "MR. PRASANNA SANJEEWA",
+    "subject": "BUSINESS TUTOR",
+    "qualifications": "Bachelor of Business Administration (Special) - University of Colombo",
+    "message": "He brings **7 years of experience** as an **IGCSE** and **IAL** educator, during which he has consistently helped students achieve impressive academic results. Known for his commitment to student success, he has earned a strong reputation for nurturing high achievers and fostering deep, lasting subject understanding.\n\nHis teaching journey includes Edexcel and Cambridge commerce-stream subjects in **several reputed international schools in Colombo**, where he has effectively guided learners through challenging syllabuses and supported them in reaching their academic goals.\n\nAt CAMDEX Education, he teaches Business for O-Level students, empowering them with solid theoretical knowledge, practical insight, and the confidence to excel in the world of business.",
+    "photo": "assets/teachers/prasanna.png",
+    "subjects_taught": [
+      "Business"
+    ]
   },
   {
-    "id": "michael",
-    "name": "Mr. Michael Fernando",
-    "subject": "Economics & Commerce Specialist",
-    "qualifications": "BSc in Economics (LSE), CFA Charterholder",
-    "message": "Master economic models and data interpretation techniques. Connect theory directly to real-world applications in every question.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Economics", "Business"]
+    "id": "qaidh",
+    "name": "MR. QAIDH SINNALEBBE",
+    "subject": "ICT TUTOR",
+    "qualifications": "BA in Creative Multimedia (Reading),\nHND in Advertising and Graphic Design",
+    "message": "With more than **4 years of experience** in the field of education, Mr. Qaidh is committed to cultivating creativity, innovation, and real-world problem-solving in his classroom.\n\nBlending his technical expertise with a passion for teaching, he creates interactive learning experiences that empower students to think critically and apply their knowledge effectively.\n\nAt CAMDEX Education, he teaches **ICT from Grade 7 to O/Levels**, guiding students to master essential digital skills while preparing them to thrive in an increasingly technology-driven world.",
+    "photo": "assets/teachers/qaidh.png",
+    "subjects_taught": [
+      "ICT"
+    ]
   },
   {
-    "id": "ananya",
-    "name": "Dr. Ananya Sharma",
-    "subject": "Pure & Applied Chemistry Lead",
-    "qualifications": "PhD in Chemistry, MChem (Oxon)",
-    "message": "Grasp chemical reaction mechanisms and quantitative stoichiometry. Practice past paper drill questions systematically.",
-    "photo": "assets/defaults/default_teacher.jpeg",
-    "subjects_taught": ["Chemistry", "Science"]
+    "id": "shehan",
+    "name": "MR. SHEHAN MORAGODA",
+    "subject": "BIOLOGY, PHYSICS & CHEMISTRY TUTOR",
+    "qualifications": "B.Sc. Biomedical Science accredited by MSU Malaysia,\nDip. in Psychology from Cardiff Metropolitan",
+    "message": "With over **8 years of experience** teaching **IGCSE and IAL Science across both Edexcel and Cambridge programs**, Shehan sir has empowered students to achieve remarkable results and build strong scientific skills.\n\nPassionate about bringing science to life, he transforms complex topics into accessible, thought-provoking lessons that spark curiosity and inspire exploration.\n\nAt CAMDEX Education, he teaches **Biology, Chemistry, and Physics from Grade 7 to O/Levels**, encouraging students to excel academically while nurturing a genuine enthusiasm and confidence in the world of science.",
+    "photo": "assets/teachers/shehan.png",
+    "subjects_taught": [
+      "Biology",
+      "Physics",
+      "Chemistry",
+      "Science"
+    ]
+  },
+  {
+    "id": "yusuf",
+    "name": "MR. YUSUF SHIHAM",
+    "subject": "COMPUTER SCIENCE TUTOR",
+    "qualifications": "Undergraduate- BSc. Hons Information Technology\nspecializing in Artificial Intelligence(Reading)",
+    "message": "Currently pursuing a **degree in Artificial Intelligence at the Sri Lanka Institute of Information Technology**, Mr. Yusuf brings together academic excellence and a deep enthusiasm for teaching.\n\nHe is dedicated to fostering an engaging and intellectually enriching learning atmosphere, where students not only gain confidence in Computer Science but also strengthen their analytical and problem-solving abilities.\n\nAt CAMDEX Education, he teaches **Computer Science for Edexcel and Cambridge O/Level** students, equipping them with the knowledge, skills, and mindset needed to excel academically and thrive in an increasingly digital future.",
+    "photo": "assets/teachers/yusuf.png",
+    "subjects_taught": [
+      "Computer Science"
+    ]
   }
 ]

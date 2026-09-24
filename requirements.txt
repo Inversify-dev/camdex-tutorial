@@ -2,3 +2,5 @@ streamlit>=1.40
 reportlab>=4.0
 Pillow>=10.0
 pymupdf>=1.24
+pypdfium2>=4.30.0
+

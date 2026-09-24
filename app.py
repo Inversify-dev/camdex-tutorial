@@ -7,10 +7,16 @@ from PIL import Image
 
 import pdf_generator
 
-# Page Configuration
+# Page Configuration & Official CAMDEX Favicon
+FAVICON_PATH = os.path.join(pdf_generator.BASE_DIR, "assets", "logos", "Seal Logo Colored Version-01.png")
+try:
+    favicon_img = Image.open(FAVICON_PATH)
+except Exception:
+    favicon_img = "📘"
+
 st.set_page_config(
     page_title="CAMDEX Tutorial PDF Generator",
-    page_icon="🎓",
+    page_icon=favicon_img,
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -54,17 +60,6 @@ st.markdown(
         color: #d1dcff;
         margin-top: 4px;
         font-weight: 400;
-    }
-    
-    .badge {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.25);
-        padding: 6px 14px;
-        border-radius: 20px;
-        font-size: 12px;
-        font-weight: 600;
-        color: #ffffff;
-        backdrop-filter: blur(10px);
     }
     
     .stat-card {
@@ -118,29 +113,36 @@ st.markdown(
 # Teacher Library Management
 TEACHERS_FILE = os.path.join(pdf_generator.BASE_DIR, "teachers.json")
 
+def deduplicate_teachers(teachers_list):
+    """Ensure no duplicate teachers exist by id or normalized name."""
+    seen_ids = set()
+    seen_names = set()
+    unique_list = []
+    for t in teachers_list:
+        tid = t.get("id", "").strip().lower()
+        tname = t.get("name", "").strip().upper()
+        if tid and tid not in seen_ids and tname not in seen_names:
+            seen_ids.add(tid)
+            seen_names.add(tname)
+            unique_list.append(t)
+    return unique_list
+
 def load_teachers():
     if os.path.exists(TEACHERS_FILE):
         try:
             with open(TEACHERS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if isinstance(data, list):
+                    return deduplicate_teachers(data)
         except Exception:
             pass
-    return [
-        {
-            "id": "raaid",
-            "name": "Mr. Raaid",
-            "subject": "Computer Science & ICT Lead",
-            "qualifications": "BSc (Hons) in Computer Science, MSc",
-            "message": "Welcome to this tutorial! Ensure all MCQs and structured questions are carefully answered. Practice consistently for exam success.",
-            "photo": "assets/defaults/default_teacher.jpeg",
-            "subjects_taught": ["Computer Science", "ICT"]
-        }
-    ]
+    return []
 
 def save_teachers(teachers_data):
     try:
+        clean_data = deduplicate_teachers(teachers_data)
         with open(TEACHERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(teachers_data, f, indent=2)
+            json.dump(clean_data, f, indent=2)
         return True
     except Exception:
         return False
@@ -238,10 +240,9 @@ st.markdown(
     """
     <div class="camdex-header">
         <div>
-            <div class="camdex-title">🎓 CAMDEX Tutorial PDF Generator</div>
-            <div class="camdex-subtitle">Automated, High-Resolution Worksheet & Exam Tutorial Publisher</div>
+            <div class="camdex-title">CAMDEX Tutorial PDF Generator</div>
+            <div class="camdex-subtitle">High-Resolution Worksheet & Exam Tutorial Publisher</div>
         </div>
-        <div class="badge">⚡ Zero Cost • 100% Automated</div>
     </div>
     """,
     unsafe_allow_html=True
@@ -249,7 +250,13 @@ st.markdown(
 
 # ----------------- SIDEBAR CONTROLS -----------------
 with st.sidebar:
-    st.markdown("### 📚 Syllabus & Subject")
+    brand_logo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "logos", "Horizontal Colored Versions -01.png")
+    if os.path.exists(brand_logo_path):
+        st.image(brand_logo_path, width="stretch")
+        st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+        st.markdown("---")
+
+    st.markdown("### Syllabus & Subject")
     
     col_b1, col_b2 = st.columns(2)
     with col_b1:
@@ -275,50 +282,246 @@ with st.sidebar:
     curriculum_title = st.text_input("Curriculum Header", value=curriculum_default)
 
     st.markdown("---")
-    st.markdown("### 👤 Teacher Profile (Page 3)")
+    st.markdown("### Teacher Profile (Page 3)")
     
+    teachers_data = load_teachers()
+    if not teachers_data:
+        teachers_data = [{
+            "id": "default",
+            "name": "Teacher Name",
+            "subject": "TUTOR",
+            "qualifications": "Qualifications",
+            "message": "Teacher Bio",
+            "photo": "",
+            "subjects_taught": []
+        }]
+
+    teacher_display_list = [f"{t['name']} ({t['subject']})" for t in teachers_data]
+    teacher_map = {f"{t['name']} ({t['subject']})": t for t in teachers_data}
+    id_to_label = {t["id"]: f"{t['name']} ({t['subject']})" for t in teachers_data}
+
+    # Handle pending teacher selection from actions (Add, Delete, etc.) BEFORE widgets instantiate
+    if "pending_teacher_id" in st.session_state:
+        target_id = st.session_state.pop("pending_teacher_id")
+        matched_t = next((t for t in teachers_data if t["id"] == target_id), teachers_data[0])
+        st.session_state["active_teacher_id"] = matched_t["id"]
+        st.session_state["teacher_name_input"] = matched_t["name"]
+        st.session_state["teacher_subject_input"] = matched_t["subject"]
+        st.session_state["teacher_qual_input"] = matched_t["qualifications"]
+        st.session_state["teacher_msg_input"] = matched_t["message"]
+        st.session_state["teacher_photo_path_active"] = matched_t.get("photo", "")
+        st.session_state["teacher_dropdown_selector"] = f"{matched_t['name']} ({matched_t['subject']})"
+
+    # Auto-match teacher based on selected subject if not yet initialized
+    if "active_teacher_id" not in st.session_state:
+        def_t = teachers_data[0]
+        for t in teachers_data:
+            if selected_subject in t.get("subjects_taught", []):
+                def_t = t
+                break
+        st.session_state["active_teacher_id"] = def_t["id"]
+        st.session_state["teacher_name_input"] = def_t["name"]
+        st.session_state["teacher_subject_input"] = def_t["subject"]
+        st.session_state["teacher_qual_input"] = def_t["qualifications"]
+        st.session_state["teacher_msg_input"] = def_t["message"]
+        st.session_state["teacher_photo_path_active"] = def_t.get("photo", "")
+        st.session_state["teacher_dropdown_selector"] = f"{def_t['name']} ({def_t['subject']})"
+
+    def on_teacher_select():
+        chosen_label = st.session_state.get("teacher_dropdown_selector")
+        if chosen_label in teacher_map:
+            t = teacher_map[chosen_label]
+            st.session_state["active_teacher_id"] = t["id"]
+            st.session_state["teacher_name_input"] = t["name"]
+            st.session_state["teacher_subject_input"] = t["subject"]
+            st.session_state["teacher_qual_input"] = t["qualifications"]
+            st.session_state["teacher_msg_input"] = t["message"]
+            st.session_state["teacher_photo_path_active"] = t.get("photo", "")
+
+    # Ensure dropdown selection is valid
+    current_active_id = st.session_state.get("active_teacher_id", teachers_data[0]["id"])
+    default_dropdown_label = id_to_label.get(current_active_id, teacher_display_list[0])
+    
+    dropdown_index = 0
+    if default_dropdown_label in teacher_display_list:
+        dropdown_index = teacher_display_list.index(default_dropdown_label)
+
+    st.selectbox(
+        "Select Teacher Profile",
+        options=teacher_display_list,
+        index=dropdown_index,
+        key="teacher_dropdown_selector",
+        on_change=on_teacher_select
+    )
+
     teacher_name = st.text_input(
         "Teacher Name",
-        value="",
+        key="teacher_name_input",
         placeholder="e.g. MR. YUSUF SHIHAM"
     )
     teacher_subject = st.text_input(
         "Subject Role / Title",
-        value="",
+        key="teacher_subject_input",
         placeholder="e.g. COMPUTER SCIENCE TUTOR"
     )
     teacher_qual = st.text_input(
         "Qualifications / Subheading",
-        value="",
-        placeholder="e.g. Undergraduate- BSc. Hons Information Technology specializing in Artificial Intelligence(Reading)"
+        key="teacher_qual_input",
+        placeholder="e.g. Undergraduate- BSc. Hons Information Technology"
     )
     teacher_msg = st.text_area(
         "Teacher Bio / Description",
-        value="",
+        key="teacher_msg_input",
         height=140,
-        placeholder="Currently pursuing a degree in Artificial Intelligence at the Sri Lanka Institute of Information Technology, Mr. Yusuf brings together academic excellence and a deep enthusiasm for teaching.\n\nHe is dedicated to fostering an engaging and intellectually enriching learning atmosphere, where students not only gain confidence in Computer Science but also strengthen their analytical and problem-solving abilities.\n\nAt CAMDEX Education, he teaches Computer Science for Edexcel and Cambridge O/Level students..."
+        placeholder="Teacher bio description..."
     )
+
+    active_photo = st.session_state.get("teacher_photo_path_active", "")
+    full_active_photo_path = os.path.join(pdf_generator.BASE_DIR, active_photo) if active_photo else ""
+
     uploaded_teacher_photo = st.file_uploader(
-        "Upload Teacher Photo (Optional - Cutout/Portrait)",
+        "Upload Custom Teacher Photo for this PDF",
         type=["png", "jpg", "jpeg"]
     )
 
+    if uploaded_teacher_photo:
+        st.caption("Using uploaded photo for current PDF:")
+        st.image(uploaded_teacher_photo, width=120)
+    elif full_active_photo_path and os.path.exists(full_active_photo_path):
+        st.caption(f"Preloaded photo for {teacher_name}:")
+        st.image(full_active_photo_path, width=120)
+
+    # ---------------- DYNAMIC TEACHER LIBRARY MANAGER ----------------
+    with st.expander("Manage Teacher Library (Add / Edit / Remove)"):
+        tab_add, tab_update, tab_delete = st.tabs(["Add New Teacher", "Update Current", "Delete"])
+        
+        with tab_add:
+            st.markdown("##### Add New Teacher to Permanent Library")
+            new_t_name = st.text_input("Full Name", placeholder="e.g. DR. SARAH PERERA", key="new_t_name")
+            new_t_role = st.text_input("Role / Title", placeholder="e.g. PHYSICS TUTOR", key="new_t_role")
+            new_t_qual = st.text_input("Qualifications", placeholder="e.g. BSc. (Hons) Physics, MSc.", key="new_t_qual")
+            new_t_bio = st.text_area("Teacher Bio / Description", height=100, placeholder="Teacher description and achievements...", key="new_t_bio")
+            new_t_photo = st.file_uploader("Upload Profile Photo", type=["png", "jpg", "jpeg"], key="new_t_photo")
+            
+            if st.button("Save New Teacher to Library", type="primary", width="stretch"):
+                if not new_t_name.strip():
+                    st.error("Please enter teacher name.")
+                else:
+                    norm_name = new_t_name.strip().upper()
+                    slug_id = re.sub(r'[^a-z0-9]', '', new_t_name.lower().replace("mr.", "").replace("ms.", "").replace("dr.", "").strip())
+                    if not slug_id:
+                        slug_id = f"teacher_{len(teachers_data) + 1}"
+                    
+                    photo_rel_path = ""
+                    if new_t_photo:
+                        photo_filename = f"{slug_id}.png"
+                        target_photo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "teachers", photo_filename)
+                        os.makedirs(os.path.dirname(target_photo_path), exist_ok=True)
+                        with open(target_photo_path, "wb") as f:
+                            f.write(new_t_photo.getbuffer())
+                        photo_rel_path = f"assets/teachers/{photo_filename}"
+                    
+                    new_teacher_obj = {
+                        "id": slug_id,
+                        "name": norm_name,
+                        "subject": new_t_role.strip().upper() if new_t_role else "TUTOR",
+                        "qualifications": new_t_qual.strip(),
+                        "message": new_t_bio.strip(),
+                        "photo": photo_rel_path,
+                        "subjects_taught": []
+                    }
+                    
+                    # Upsert: If teacher exists with same ID or name, update them; otherwise append
+                    existing_idx = -1
+                    for idx, t in enumerate(teachers_data):
+                        if t.get("id", "").lower() == slug_id or t.get("name", "").strip().upper() == norm_name:
+                            existing_idx = idx
+                            break
+                    
+                    if existing_idx >= 0:
+                        if not photo_rel_path and teachers_data[existing_idx].get("photo"):
+                            new_teacher_obj["photo"] = teachers_data[existing_idx]["photo"]
+                        teachers_data[existing_idx] = new_teacher_obj
+                    else:
+                        teachers_data.append(new_teacher_obj)
+                    
+                    if save_teachers(teachers_data):
+                        st.session_state["pending_teacher_id"] = slug_id
+                        st.success(f"Saved {norm_name} to library!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to save teacher to teachers.json.")
+
+        with tab_update:
+            st.markdown("##### Permanently Save Current Edits")
+            st.write(f"Save any modifications made above for **{teacher_name}**.")
+            
+            if st.button("Update This Teacher in Library", width="stretch"):
+                chosen_label = st.session_state.get("teacher_dropdown_selector")
+                if chosen_label in teacher_map:
+                    t_to_update = teacher_map[chosen_label]
+                    for t in teachers_data:
+                        if t["id"] == t_to_update["id"]:
+                            t["name"] = teacher_name
+                            t["subject"] = teacher_subject
+                            t["qualifications"] = teacher_qual
+                            t["message"] = teacher_msg
+                            if uploaded_teacher_photo:
+                                photo_filename = f"{t['id']}.png"
+                                target_photo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "teachers", photo_filename)
+                                os.makedirs(os.path.dirname(target_photo_path), exist_ok=True)
+                                with open(target_photo_path, "wb") as f:
+                                    f.write(uploaded_teacher_photo.getbuffer())
+                                t["photo"] = f"assets/teachers/{photo_filename}"
+                            break
+                    if save_teachers(teachers_data):
+                        st.session_state["pending_teacher_id"] = t_to_update["id"]
+                        st.success(f"Updated {teacher_name} in library!")
+                        st.rerun()
+                    else:
+                        st.error("Failed to update teacher in teachers.json.")
+
+        with tab_delete:
+            st.markdown("##### Delete Teacher from Library")
+            teacher_to_del_label = st.selectbox(
+                "Select Teacher to Delete",
+                options=teacher_display_list,
+                key="del_teacher_sel"
+            )
+            confirm_del = st.checkbox("I confirm I want to permanently delete this teacher", key="confirm_del_chk")
+            if st.button("Delete Teacher", type="secondary", width="stretch"):
+                if not confirm_del:
+                    st.warning("Please tick the confirmation checkbox to delete.")
+                elif len(teachers_data) <= 1:
+                    st.error("Cannot delete the only remaining teacher.")
+                else:
+                    t_del = teacher_map.get(teacher_to_del_label)
+                    if t_del:
+                        remaining_teachers = [t for t in teachers_data if t["id"] != t_del["id"]]
+                        if save_teachers(remaining_teachers):
+                            st.session_state["pending_teacher_id"] = remaining_teachers[0]["id"]
+                            st.success(f"Deleted teacher from library!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to update teachers.json.")
+
     st.markdown("---")
-    st.markdown("### ⚙️ Document Layout")
-    include_cover = st.checkbox("Include Subject Cover Page (Page 1)", value=True)
+    st.markdown("### Document Layout")
     include_intro = st.checkbox("Include Institute About Page (Page 2)", value=True)
     include_teacher = st.checkbox("Include Teacher Profile Page (Page 3)", value=True)
     
     custom_cover_upload = st.file_uploader("Upload Custom Cover (Optional)", type=["png", "jpg", "jpeg"])
 
-# Resolve Teacher Photo Path (blank if none uploaded)
-temp_teacher_photo_path = None
+# Resolve Teacher Photo Path
+final_teacher_photo_path = None
 if uploaded_teacher_photo:
     temp_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp")
     os.makedirs(temp_dir, exist_ok=True)
-    temp_teacher_photo_path = os.path.join(temp_dir, f"uploaded_teacher_{uploaded_teacher_photo.name}")
-    with open(temp_teacher_photo_path, "wb") as f:
+    final_teacher_photo_path = os.path.join(temp_dir, f"uploaded_teacher_{uploaded_teacher_photo.name}")
+    with open(final_teacher_photo_path, "wb") as f:
         f.write(uploaded_teacher_photo.getbuffer())
+elif full_active_photo_path and os.path.exists(full_active_photo_path):
+    final_teacher_photo_path = full_active_photo_path
 
 temp_cover_path = None
 if custom_cover_upload:
@@ -332,18 +535,18 @@ if custom_cover_upload:
 main_col, preview_col = st.columns([1.1, 0.9])
 
 with main_col:
-    st.markdown("#### 📝 Paste Your Questions")
+    st.markdown("#### Paste Your Questions")
     
     # Quick Sample Buttons
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
     with btn_col1:
-        if st.button("📋 Load MCQs Sample", use_container_width=True):
+        if st.button("Load MCQs Sample", width="stretch"):
             st.session_state["questions_input"] = SAMPLE_MCQ_TEXT
     with btn_col2:
-        if st.button("📑 Load Mixed Sample", use_container_width=True):
+        if st.button("Load Mixed Sample", width="stretch"):
             st.session_state["questions_input"] = SAMPLE_MIXED_TEXT
     with btn_col3:
-        if st.button("🗑️ Clear Input", use_container_width=True):
+        if st.button("Clear Input", width="stretch"):
             st.session_state["questions_input"] = ""
 
     current_input_val = st.session_state.get("questions_input", SAMPLE_MCQ_TEXT)
@@ -383,7 +586,7 @@ with main_col:
         unsafe_allow_html=True
     )
 
-    generate_btn = st.button("🚀 Generate High-Resolution PDF", type="primary", use_container_width=True)
+    generate_btn = st.button("Generate High-Resolution PDF", type="primary", width="stretch")
 
 # Generate PDF State
 if generate_btn or "generated_pdf" in st.session_state:
@@ -403,7 +606,7 @@ if generate_btn or "generated_pdf" in st.session_state:
                     teacher_qualifications=teacher_qual,
                     teacher_subject=teacher_subject,
                     teacher_message=teacher_msg,
-                    teacher_photo_path=temp_teacher_photo_path,
+                    teacher_photo_path=final_teacher_photo_path,
                     custom_cover_path=temp_cover_path,
                     font_color_hex="#1A4199",
                     watermark_opacity=0.22
@@ -413,8 +616,27 @@ if generate_btn or "generated_pdf" in st.session_state:
         except Exception as e:
             st.error(f"Generation error: {str(e)}")
 
+def render_pdf_pages_to_images(pdf_bytes, scale=1.5):
+    """Render PDF pages to PIL images for universal cross-device preview."""
+    try:
+        import pypdfium2 as pdfium
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        return [pdf[i].render(scale=scale).to_pil() for i in range(len(pdf))]
+    except Exception:
+        try:
+            import fitz
+            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            images = []
+            for page in doc:
+                pix = page.get_pixmap(dpi=144)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                images.append(img)
+            return images
+        except Exception:
+            return []
+
 with preview_col:
-    st.markdown("#### 📄 PDF Output & Download")
+    st.markdown("#### PDF Output & Preview")
     
     if "generated_pdf" in st.session_state:
         pdf_bytes = st.session_state["generated_pdf"]
@@ -426,33 +648,99 @@ with preview_col:
         clean_unit = re.sub(r'[^a-zA-Z0-9]', '', str(unit_title or "Topic"))
         filename = f"tute_{clean_tut}_{clean_subject}_{clean_unit}.pdf"
 
-        st.success(f"✓ PDF successfully created ({q_count} questions rendered)")
+        st.success(f"PDF successfully created ({q_count} questions rendered)")
         
         st.download_button(
-            label=f"⬇️ Download {filename}",
+            label=f"Download {filename}",
             data=pdf_bytes,
             file_name=filename,
             mime="application/pdf",
-            use_container_width=True
+            width="stretch"
         )
 
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
-        # Embedded PDF Viewer
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}#toolbar=1&navpanes=0&scrollbar=1" width="100%" height="600" style="border: 1px solid #cbd5e1; border-radius: 8px;"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
+        # Universal Cross-Device Preview Tabs (100% Unblockable across all devices & browsers)
+        tab_page_by_page, tab_all_pages = st.tabs(["Page-by-Page View", "Continuous Booklet View"])
+
+        # Render high-res page images directly in memory (immune to browser plugin/iframe blocks)
+        page_images = render_pdf_pages_to_images(pdf_bytes, scale=1.8)
+        total_pages = len(page_images)
+
+        with tab_page_by_page:
+            if page_images:
+                if "preview_page_idx" not in st.session_state or st.session_state["preview_page_idx"] >= total_pages:
+                    st.session_state["preview_page_idx"] = 0
+
+                def go_prev_page():
+                    if st.session_state.get("preview_page_idx", 0) > 0:
+                        st.session_state["preview_page_idx"] -= 1
+
+                def go_next_page():
+                    if st.session_state.get("preview_page_idx", 0) < total_pages - 1:
+                        st.session_state["preview_page_idx"] += 1
+
+                col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
+
+                cur_idx = st.session_state.get("preview_page_idx", 0)
+
+                with col_nav1:
+                    st.button(
+                        "◀ Previous",
+                        on_click=go_prev_page,
+                        disabled=(cur_idx == 0),
+                        width="stretch",
+                        key="btn_prev_page"
+                    )
+
+                with col_nav2:
+                    page_labels = [f"Page {i+1} of {total_pages}" for i in range(total_pages)]
+                    st.selectbox(
+                        "Page Selector",
+                        options=range(total_pages),
+                        format_func=lambda i: page_labels[i],
+                        key="preview_page_idx",
+                        label_visibility="collapsed"
+                    )
+
+                with col_nav3:
+                    st.button(
+                        "Next ▶",
+                        on_click=go_next_page,
+                        disabled=(cur_idx >= total_pages - 1),
+                        width="stretch",
+                        key="btn_next_page"
+                    )
+
+                active_idx = st.session_state.get("preview_page_idx", 0)
+                if active_idx >= total_pages:
+                    active_idx = 0
+                current_img = page_images[active_idx]
+                st.image(
+                    current_img,
+                    caption=f"Showing Page {active_idx + 1} of {total_pages} (High Resolution Preview)",
+                    width="stretch"
+                )
+            else:
+                st.warning("Could not render page images. Please use the Download button to view.")
+
+        with tab_all_pages:
+            if page_images:
+                for idx, img in enumerate(page_images):
+                    st.markdown(f"<div style='font-size: 13px; font-weight: 700; color: #1A4199; margin: 16px 0 6px 0; background: #eef2ff; padding: 4px 12px; border-radius: 6px; display: inline-block;'>Page {idx+1} of {total_pages}</div>", unsafe_allow_html=True)
+                    st.image(img, width="stretch")
+                    if idx < total_pages - 1:
+                        st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px dashed #cbd5e1;'/>", unsafe_allow_html=True)
     else:
-        st.info("👈 Click **'Generate High-Resolution PDF'** to build and preview your formatted tutorial PDF.")
+        st.info("Click **'Generate High-Resolution PDF'** to build and preview your formatted tutorial PDF.")
         
         # Show placeholder preview
         st.markdown(
             f"""
             <div style="background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 12px; height: 560px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; text-align: center; padding: 24px;">
-                <div style="font-size: 48px; margin-bottom: 12px;">📑</div>
-                <div style="font-size: 18px; font-weight: 600; color: #1e293b; margin-bottom: 6px;">Ready to Generate</div>
-                <div style="font-size: 14px; max-width: 320px;">
-                    Selected: <b>{selected_subject} ({board_code})</b><br/>
+                <div style="font-size: 20px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">Ready to Generate</div>
+                <div style="font-size: 14px; max-width: 320px; color: #64748b;">
+                    Selected: <b style="color: #1A4199;">{selected_subject} ({board_code})</b><br/>
                     Unit: <b>{unit_title}</b> • {tutorial_number}
                 </div>
             </div>
