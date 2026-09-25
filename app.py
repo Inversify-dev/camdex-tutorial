@@ -208,6 +208,26 @@ def get_session_temp_dir():
     os.makedirs(session_dir, exist_ok=True)
     return session_dir
 
+SUBJECT_LIST = [
+    "Computer Science", "Mathematics", "Physics", "Chemistry",
+    "Biology", "Science", "ICT", "Business", "Economics",
+    "Accounting", "English"
+]
+
+# Apply any pending detected metadata BEFORE sidebar widgets instantiate
+if "pending_detected_meta" in st.session_state:
+    meta = st.session_state.pop("pending_detected_meta")
+    if meta.get("board"):
+        st.session_state["exam_board_select"] = "Edexcel (EDX)" if meta["board"] == "EDX" else "Cambridge (CMB)"
+    if meta.get("subject") and meta["subject"] in SUBJECT_LIST:
+        st.session_state["subject_select"] = meta["subject"]
+    if meta.get("unit"):
+        st.session_state["unit_title_input"] = meta["unit"]
+    if meta.get("tutorial"):
+        st.session_state["tut_title_input"] = meta["tutorial"]
+    if meta.get("curriculum"):
+        st.session_state["curr_title_input"] = meta["curriculum"]
+
 # ----------------- SIDEBAR CONTROLS -----------------
 with st.sidebar:
     brand_logo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "logos", "Horizontal Colored Versions -01.png")
@@ -230,14 +250,9 @@ with st.sidebar:
         board_code = "CMB" if "CMB" in board_option else "EDX"
     
     with col_b2:
-        subject_list = [
-            "Computer Science", "Mathematics", "Physics", "Chemistry",
-            "Biology", "Science", "ICT", "Business", "Economics",
-            "Accounting", "English"
-        ]
         if "subject_select" not in st.session_state:
             st.session_state["subject_select"] = "Computer Science"
-        selected_subject = st.selectbox("Subject", subject_list, key="subject_select")
+        selected_subject = st.selectbox("Subject", SUBJECT_LIST, key="subject_select")
 
     if "unit_title_input" not in st.session_state:
         st.session_state["unit_title_input"] = "Communication & the Internet"
@@ -511,19 +526,9 @@ with main_col:
                     temp_diag_dir
                 )
                 st.session_state["last_direct_doc"] = f_key
-                if detected_meta.get("board"):
-                    st.session_state["exam_board_select"] = "Edexcel (EDX)" if detected_meta["board"] == "EDX" else "Cambridge (CMB)"
-                if detected_meta.get("subject") and detected_meta["subject"] in subject_list:
-                    st.session_state["subject_select"] = detected_meta["subject"]
-                if detected_meta.get("unit"):
-                    st.session_state["unit_title_input"] = detected_meta["unit"]
-                if detected_meta.get("tutorial"):
-                    st.session_state["tut_title_input"] = detected_meta["tutorial"]
-                if detected_meta.get("curriculum"):
-                    st.session_state["curr_title_input"] = detected_meta["curriculum"]
-            
-            # Auto-trigger immediate generation on upload
-            st.session_state["auto_generate_direct"] = True
+                st.session_state["pending_detected_meta"] = detected_meta
+                st.session_state["auto_generate_direct"] = True
+                st.rerun()
             
         st.success(f"Loaded: **{direct_uploaded_file.name}** ({direct_uploaded_file.size / 1024:.1f} KB)")
     
