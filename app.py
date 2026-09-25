@@ -5,9 +5,7 @@ import re
 import streamlit as st
 from PIL import Image
 
-import importlib
 import pdf_generator
-importlib.reload(pdf_generator)
 
 # Page Configuration & Official CAMDEX Favicon
 FAVICON_PATH = os.path.join(pdf_generator.BASE_DIR, "assets", "logos", "Seal Logo Colored Version-01.png")
@@ -175,7 +173,7 @@ st.markdown(
     <div class="camdex-header">
         <div>
             <div class="camdex-title">CAMDEX Tutorial PDF Generator</div>
-            <div class="camdex-subtitle">Upload Raw Tutor Document (.pdf / .docx), Edit in Container & Publish in Official CAMDEX Blue</div>
+            <div class="camdex-subtitle">Upload Raw Tutor Document (.pdf / .docx), Edit in Container & Publish in Official CAMDEX </div>
         </div>
     </div>
     """,
@@ -248,7 +246,6 @@ with st.sidebar:
         target_id = st.session_state.pop("pending_teacher_id")
         matched_t = next((t for t in teachers_data if t["id"] == target_id), teachers_data[0])
         st.session_state["active_teacher_id"] = matched_t["id"]
-        st.session_state["teacher_dropdown_selector"] = f"{matched_t['name']} ({matched_t['subject']})"
 
     if "active_teacher_id" not in st.session_state:
         def_t = teachers_data[0]
@@ -257,7 +254,6 @@ with st.sidebar:
                 def_t = t
                 break
         st.session_state["active_teacher_id"] = def_t["id"]
-        st.session_state["teacher_dropdown_selector"] = f"{def_t['name']} ({def_t['subject']})"
 
     def on_teacher_select():
         chosen_label = st.session_state.get("teacher_dropdown_selector")
@@ -464,13 +460,13 @@ main_col, preview_col = st.columns([1.1, 0.9])
 
 with main_col:
     st.markdown("##### 1. Upload Raw Tutorial / Past Paper (.pdf, .docx, .txt)")
-    st.info("Upload your raw tutor document here. It will convert directly into the official CAMDEX Publication in **CAMDEX Deep Royal Blue (#1A4199)** with all diagrams, tables, and official covers & borders in place.")
+    st.info("Upload your raw tutor document here. It will convert directly into the official CAMDEX Publication.")
     
     direct_uploaded_file = st.file_uploader(
         "Upload Raw Tutor Document",
         type=["pdf", "docx", "doc", "txt"],
         key="direct_raw_tute_uploader",
-        help="Transforms raw PDFs, Word documents, or worksheets into official CAMDEX Blue format."
+        help="Transforms raw PDFs, Word documents, or worksheets into official CAMDEX format."
     )
     
     # Auto metadata extraction on upload
@@ -520,7 +516,7 @@ with main_col:
         unsafe_allow_html=True
     )
     
-    generate_direct_btn = st.button("Convert & Publish Document in CAMDEX Blue", type="primary", width="stretch")
+    generate_direct_btn = st.button("Convert & Publish Document", type="primary", width="stretch")
 
 # Handle Direct Auto-Generation or Button Trigger
 should_run_direct = generate_direct_btn or (st.session_state.pop("auto_generate_direct", False) and direct_uploaded_file is not None)
@@ -530,7 +526,7 @@ if should_run_direct:
         st.error("Please upload a raw tutorial document (PDF, Word DOCX, or TXT) first.")
     else:
         try:
-            with st.spinner("Converting raw document directly to official CAMDEX Blue publication..."):
+            with st.spinner("Converting raw document directly to official CAMDEX publication..."):
                 pdf_bytes, page_count = pdf_generator.build_direct_raw_tutorial_pdf(
                     file_bytes=direct_uploaded_file.getvalue(),
                     filename=direct_uploaded_file.name,
@@ -676,7 +672,7 @@ with preview_col:
                 current_img = page_images[active_idx]
                 st.image(
                     current_img,
-                    caption=f"Showing Page {active_idx + 1} of {total_pages} (CAMDEX Official Blue Preview)",
+                    caption=f"Showing Page {active_idx + 1} of {total_pages} (CAMDEX Official Preview)",
                     width="stretch"
                 )
             else:

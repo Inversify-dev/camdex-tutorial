@@ -839,7 +839,7 @@ def build_tutorial_pdf(
     """
     Compiles full high-res tutorial PDF with Cover, Intro, Teacher Profile, and Questions.
     Supports MCQs, structured questions, reading passages, tables, diagrams, and marks.
-    Renders all text in the official CAMDEX Deep Royal Blue theme.
+    Renders all text in the official CAMDEX theme.
     """
     parsed = parse_input_text(raw_text)
     blocks = parsed["blocks"]
