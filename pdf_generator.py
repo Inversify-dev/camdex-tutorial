@@ -1,12 +1,20 @@
 """
 Tutorial PDF Generator Engine for Camdex Education.
-Matches the exact structure, styling, colors, watermark, and branding of Tute_1_CMB_DataRepresentation.pdf.
+Matches the exact structure, styling, colors, watermark, and branding of Camdex Education publications.
+Supports MCQs, Structured Questions, Multi-paragraph Reading Passages, Tables, Diagrams, Dotted Lines,
+Raw Document (.pdf / .docx) Importing with automatic diagram extraction, and Past Paper Stamping.
 """
 
 import io
 import os
 import re
 from PIL import Image
+
+import pymupdf as fitz
+try:
+    import docx
+except ImportError:
+    docx = None
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
@@ -15,7 +23,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, mm
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, PageBreak, KeepTogether,
-    Table, TableStyle, Image as PlatypusImage, HRFlowable
+    Table, TableStyle, Image as PlatypusImage, HRFlowable, Flowable
 )
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -24,6 +32,100 @@ from reportlab.pdfbase.pdfmetrics import registerFontFamily
 
 # Page dimensions (Letter standard matching reference 612x792 pt)
 PAGE_WIDTH, PAGE_HEIGHT = 612.0, 792.0
+CONTENT_WIDTH = 504.0  # 612 - 54*2
+
+
+class DottedAnswerLine(Flowable):
+    """
+    Draws a uniform, dark CAMDEX Deep Royal Blue vector dotted answer line
+    from left_indent extending fully to the right content margin (availWidth).
+    Optionally draws right-aligned mark brackets (e.g. '[1]', '[2]', '[Total: 10]').
+    """
+    def __init__(self, left_indent=24.0, height=16.5, color=None, mark=None, mark_font="Times-Bold", mark_size=10.5):
+        super().__init__()
+        self.left_indent = float(left_indent)
+        self.height = float(height)
+        self.color = color or colors.HexColor("#1A4199")
+        self.mark = mark
+        self.mark_font = mark_font
+        self.mark_size = float(mark_size)
+
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        return availWidth, self.height
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        
+        y = 4.0
+        x_start = self.left_indent
+        x_end = self.width
+        
+        if self.mark:
+            c.setFont(self.mark_font, self.mark_size)
+            c.setFillColor(self.color)
+            mark_text = str(self.mark).strip()
+            mark_w = c.stringWidth(mark_text, self.mark_font, self.mark_size)
+            c.drawString(self.width - mark_w, y - 2.0, mark_text)
+            x_end = self.width - mark_w - 8.0
+            
+        if x_end > x_start:
+            c.setStrokeColor(self.color)
+            c.setLineWidth(0.85)
+            c.setDash([1.2, 3.0])
+            c.line(x_start, y, x_end, y)
+            
+        c.restoreState()
+
+
+class NumberedDottedAnswerLine(Flowable):
+    """
+    Draws a number label (e.g., '1.', '2.', '(a)') followed by the dark vector dotted rule
+    reaching the right margin, with optional right-aligned mark.
+    """
+    def __init__(self, num_str="1.", left_indent=24.0, height=16.5, color=None, mark=None, mark_font="Times-Bold", mark_size=10.5):
+        super().__init__()
+        self.num_str = str(num_str).strip()
+        self.left_indent = float(left_indent)
+        self.height = float(height)
+        self.color = color or colors.HexColor("#1A4199")
+        self.mark = mark
+        self.mark_font = mark_font
+        self.mark_size = float(mark_size)
+
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        return availWidth, self.height
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        
+        y = 4.0
+        c.setFont(self.mark_font, self.mark_size)
+        c.setFillColor(self.color)
+        
+        c.drawString(self.left_indent, y - 2.0, self.num_str)
+        num_w = c.stringWidth(self.num_str, self.mark_font, self.mark_size)
+        
+        x_start = self.left_indent + num_w + 6.0
+        x_end = self.width
+        
+        if self.mark:
+            mark_text = str(self.mark).strip()
+            mark_w = c.stringWidth(mark_text, self.mark_font, self.mark_size)
+            c.drawString(self.width - mark_w, y - 2.0, mark_text)
+            x_end = self.width - mark_w - 8.0
+            
+        if x_end > x_start:
+            c.setStrokeColor(self.color)
+            c.setLineWidth(0.85)
+            c.setDash([1.2, 3.0])
+            c.line(x_start, y, x_end, y)
+            
+        c.restoreState()
+
 
 # Base directories
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -58,7 +160,7 @@ try:
             italic="Poppins",
             boldItalic="Poppins-Bold"
         )
-except Exception as _fe:
+except Exception:
     pass
 
 # Exact Camdex Reference Brand Colors
@@ -66,7 +168,9 @@ COLOR_PRIMARY = colors.HexColor("#1A4199")     # Exact Camdex Deep Royal Blue
 COLOR_SECONDARY = colors.HexColor("#3154A4")   # Header Accent Blue
 COLOR_DARK = colors.HexColor("#1A4199")        # Question Text Color
 COLOR_MUTED = colors.HexColor("#555555")       # Gray subtitle
-COLOR_BORDER = colors.HexColor("#E0E4F0")      # Table border
+COLOR_BORDER = colors.HexColor("#CBD5E1")      # Table border
+COLOR_TABLE_HEADER = colors.HexColor("#EBF1FA")# Table header background
+COLOR_DOTS = colors.HexColor("#6B8ECF")        # Clean exam dotted line blue
 
 # Subject to Cover File Mapping
 SUBJECT_COVER_MAP = {
@@ -94,22 +198,66 @@ SUBJECT_COVER_MAP = {
     ("Science", "EDX"): "Science EDX.png",
 }
 
-def escape_xml(text):
-    """Escapes XML entities and unicode dashes for ReportLab Paragraphs."""
+def sanitize_and_escape(text):
+    """
+    Cleans unicode artifacts, Word/PDF smart characters, and escapes XML entities.
+    Prevents black rectangle / missing glyph rendering in ReportLab.
+    """
     if text is None:
         return ""
     text = str(text)
-    text = text.replace("&", "&amp;")
-    text = text.replace("<", "&lt;")
-    text = text.replace(">", "&gt;")
-    text = text.replace("—", "&mdash;").replace("–", "&ndash;")
+    
+    # 1. Escape XML characters
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    
+    # 2. Map smart punctuation, symbols, and artifacts to safe representations
+    replacements = {
+        '\u2018': "'",
+        '\u2019': "'",
+        '\u201c': '"',
+        '\u201d': '"',
+        '\u2013': '&ndash;',
+        '\u2014': '&mdash;',
+        '\u2026': '...',
+        '\u2022': '&bull;',
+        '\u25aa': '&bull;',
+        '\u25cf': '&bull;',
+        '\u25cb': '&bull;',
+        '\u25a0': '&bull;',
+        '\uf0b4': '',
+        '\uf0d8': '',
+        '\uf0a7': '',
+        '\xa0': ' ',
+        '°': '&deg;',
+        '±': '&plusmn;',
+        '²': '<sup>2</sup>',
+        '³': '<sup>3</sup>',
+        '×': '&times;',
+        '÷': '&divide;',
+        '→': '&rarr;',
+        '←': '&larr;',
+        '↔': '&harr;',
+        '≤': '&le;',
+        '≥': '&ge;',
+        '≠': '&ne;',
+        'µ': '&mu;',
+        'Ω': '&#937;',
+        'λ': '&#955;',
+        'π': '&#960;',
+        '–': '&ndash;',
+        '—': '&mdash;',
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+        
     return text
 
 def format_subscripts(text):
     """
-    Format common CS/Math subscripts such as 26_10, 3F_16, 101101_2, 26(10), or explicit _sub / ^sup.
+    Format common CS/Math/Science subscripts such as CO_2, H_2O, 26_10, 3F_16, 101101_2, or explicit _sub / ^sup.
     """
-    # Convert explicit _2, _10, _16 or _{sub}
+    if not text:
+        return ""
     text = re.sub(r'_\{([^}]+)\}', r'<sub>\1</sub>', text)
     text = re.sub(r'\^\{([^}]+)\}', r'<sup>\1</sup>', text)
     text = re.sub(r'\_([0-9a-zA-Z]+)', r'<sub>\1</sub>', text)
@@ -121,27 +269,78 @@ def format_subscripts(text):
     text = re.sub(r'\(2\)', r'<sub>2</sub>', text)
     return text
 
-QUESTION_START_RE = re.compile(r"^(?:(?:Q|Question)\s*)?(\d+)[\.\)]\s*(.*)$", re.IGNORECASE)
-SUBPART_START_RE = re.compile(r"^\(?([a-z]|[ivx]+)\)[\.\)]\s*(.*)$", re.IGNORECASE)
+def clean_xml_text(text):
+    """Convenience helper combining sanitization, XML escaping, and subscript formatting."""
+    return format_subscripts(sanitize_and_escape(text))
+
+def format_marks_in_text(text):
+    """
+    Detects trailing marks like [1], [2], [Total: 10] or (2 marks).
+    Returns (cleaned_text, mark_html or None).
+    """
+    m = re.search(r'(\[(?:\d+|Total:\s*\d+)\]|\(\d+\s*marks?\))\s*$', text, re.IGNORECASE)
+    if m:
+        mark_str = m.group(1)
+        base_text = text[:m.start()].strip()
+        return base_text, mark_str
+    return text, None
+
+def parse_markdown_table(table_lines):
+    """Parses a markdown or pipe-delimited table into a list of row lists."""
+    rows = []
+    for line in table_lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip separator line like |---|---|
+        if re.match(r'^\|?[\s\-:|]+\|?$', line):
+            continue
+        cells = [c.strip() for c in line.split('|')]
+        if line.startswith('|') and cells and cells[0] == '':
+            cells = cells[1:]
+        if line.endswith('|') and cells and cells[-1] == '':
+            cells = cells[:-1]
+        if cells:
+            rows.append(cells)
+    return rows
 
 def parse_input_text(raw_text):
     """
-    Intelligently parses pasted text into structured questions (MCQs and Structured Questions).
+    Intelligently parses pasted text into structured questions, MCQs,
+    reading comprehension passages, tables, diagrams, and marks.
+    Preserves all paragraphs and merges hard-wrapped lines cleanly.
     """
     lines = raw_text.splitlines()
-    questions = []
+    blocks = []
     current_q = None
-    current_section = "MCQs"
+    current_sec = "MCQs"
+    
+    table_buffer = []
     
     meta_title = None
     meta_unit = None
     meta_tutorial = None
 
+    def flush_table():
+        nonlocal table_buffer
+        if table_buffer:
+            if current_q is not None:
+                current_q["elements"].append({"type": "table", "rows": list(table_buffer)})
+            else:
+                blocks.append({"type": "table", "rows": list(table_buffer)})
+            table_buffer = []
+
     for raw_line in lines:
         line = raw_line.strip()
+        
+        # Check for Markdown/Pipe Table line
+        if '|' in line and (line.startswith('|') or line.endswith('|') or line.count('|') >= 2):
+            table_buffer.append(line)
+            continue
+        else:
+            flush_table()
+
         if not line:
-            if current_q and current_q["type"] == "structured":
-                current_q["lines"].append("")
             continue
 
         low = line.lower()
@@ -168,81 +367,336 @@ def parse_input_text(raw_text):
 
         # Section headers
         if low in ("mcqs", "multiple choice questions", "section a: mcqs", "section a"):
-            current_section = "MCQs"
+            current_sec = "MCQs"
+            blocks.append({"type": "section_header", "title": "MCQs"})
             continue
         if low.startswith("structured questions") or low.startswith("section b"):
-            current_section = "Structured"
+            current_sec = "Structured"
+            blocks.append({"type": "section_header", "title": "Structured Questions:"})
             continue
 
-        # Check for Question Start (e.g., "1. What is...")
-        qm = QUESTION_START_RE.match(line)
-        is_sub_numbered = (current_section == "Structured" and current_q and line.startswith(("1.", "2.", "3.", "1)", "2)")) and (line.endswith("...") or len(line) < 40 or "..." in line))
-        
-        if qm and not is_sub_numbered:
+        # Check for Diagram / Image tag
+        img_match = re.match(r'^\[(?:diagram|image|fig|figure)\s*(?::\s*|\s+)?([^\]]*)\]', line, re.IGNORECASE)
+        md_img_match = re.match(r'^!\[(.*?)\]\((.*?)\)', line)
+        if img_match or md_img_match:
+            img_ref = img_match.group(1).strip() if img_match else md_img_match.group(2).strip()
+            caption = md_img_match.group(1).strip() if md_img_match else ""
             if current_q:
-                questions.append(current_q)
-            q_num = int(qm.group(1))
-            q_text = qm.group(2).strip()
+                current_q["elements"].append({"type": "image", "ref": img_ref, "caption": caption})
+            else:
+                blocks.append({"type": "image", "ref": img_ref, "caption": caption})
+            continue
+
+        # Check for Question Start (e.g. "1. What is..." or "41. Zafer and Robert...")
+        # Guard against IP addresses (e.g. 192.169.0.3) and decimals (e.g. 3.14)
+        is_question_start = False
+        q_num = None
+        q_text = ""
+
+        if not re.match(r'^\d+\.\d+', line):
+            qm = re.match(r"^(?:(?:Q|Question)\s*)?(\d+)[\.\)]\s*(.*)$", line, re.IGNORECASE)
+            qm2 = None
+            if not qm and re.match(r"^(\d+)\s+([A-Z].*)$", line) and len(line) > 15:
+                qm2 = re.match(r"^(\d+)\s+([A-Z].*)$", line)
+
+            if qm:
+                num = int(qm.group(1))
+                text = qm.group(2).strip()
+                # If in structured mode and looks like a subpart answer line e.g. 1. .......... do not treat as new question
+                if current_q and current_sec == "Structured" and (text.startswith("...") or "..." in text or len(text) < 4):
+                    is_question_start = False
+                else:
+                    is_question_start = True
+                    q_num = num
+                    q_text = text
+            elif qm2:
+                is_question_start = True
+                q_num = int(qm2.group(1))
+                q_text = qm2.group(2).strip()
+
+        if is_question_start:
             current_q = {
+                "type": "question",
+                "q_type": "mcq" if current_sec == "MCQs" else "structured",
+                "section": current_sec,
                 "number": q_num,
                 "text": q_text,
-                "type": "mcq" if current_section == "MCQs" else "structured",
-                "section": current_section,
                 "options": [],
-                "lines": []
+                "elements": []
             }
+            blocks.append(current_q)
             continue
 
-        # Check for MCQ Option (e.g., "A. 11010") - only in MCQ mode
-        if current_section == "MCQs" and current_q and current_q["type"] == "mcq":
-            om = re.match(r"^\(?([A-D])[\.\)]\s*(.*)$", line)
-            if om:
-                opt_letter = om.group(1).upper()
-                opt_text = om.group(2).strip()
-                current_q["options"].append((opt_letter, opt_text))
-                continue
+        # Check for MCQ Option (e.g. "A. Option" or "B) Option")
+        om = re.match(r"^\(?([A-D])[\.\)]\s+(.*)$", line)
+        if om and current_q and current_q["q_type"] == "mcq":
+            opt_letter = om.group(1).upper()
+            opt_text = om.group(2).strip()
+            current_q["options"].append((opt_letter, opt_text))
+            continue
 
-        # If we have an active question, append as structured / extra line
+        # Check for Subpart (e.g. "a. ...", "(a) ...", "b) ...", "(i) ...", "ii. ...")
+        sm = re.match(r"^(?:\(([a-z]|[ivx]+)\)|([a-z]|[ivx]+)[\.\)])\s+(.*)$", line, re.IGNORECASE)
+
+        # If we have an active question
         if current_q:
-            if current_q["type"] == "mcq" and len(current_q["options"]) == 0:
-                current_q["text"] += " " + line
-            else:
-                if current_section == "Structured":
-                    current_q["type"] = "structured"
-                current_q["lines"].append(line)
-        else:
-            # Skip loose leading blank or header-like lines before question 1
-            if len(line) < 30 and ("exam" in low or "paper" in low or "cambridge" in low or "grade" in low):
+            # If line is a Subpart:
+            if sm:
+                lbl = sm.group(1) or sm.group(2)
+                stext = sm.group(3).strip()
+                current_q["elements"].append({"type": "subpart", "label": lbl, "text": stext})
                 continue
-            # First item without explicit number
-            current_q = {
-                "number": 1,
-                "text": line,
-                "type": "mcq" if current_section == "MCQs" else "structured",
-                "section": current_section,
-                "options": [],
-                "lines": []
-            }
 
-    if current_q:
-        questions.append(current_q)
+            # Passage Header e.g. "Text C: Our big red bus ride"
+            if re.match(r"^(?:Text|Source|Passage|Case Study)\s+[A-Z0-9]:", line, re.IGNORECASE):
+                current_q["elements"].append({"type": "passage_header", "text": line})
+                continue
 
-    # Renumber sequentially
-    for idx, q in enumerate(questions, 1):
+            # Sub-item e.g. "1. ...", "2. ..." (guard against IP addresses)
+            nm = re.match(r"^(\d+)[\.\)]\s*(.*)$", line) if not re.match(r'^\d+\.\d+', line) else None
+            if nm and (current_q["elements"] or current_sec == "Structured"):
+                current_q["elements"].append({"type": "sub_item", "num": nm.group(1), "text": nm.group(2).strip()})
+                continue
+
+            # Bullet point e.g. "• ethical hacking" or "- point"
+            if line.startswith(("•", "-", "*", "▪", "–")):
+                bullet_text = line.lstrip("•-*▪– ").strip()
+                current_q["elements"].append({"type": "bullet", "text": bullet_text})
+                continue
+
+            # Total Marks e.g. "[Total: 10]"
+            if re.match(r"^\[Total:\s*\d+\]", line, re.IGNORECASE):
+                current_q["elements"].append({"type": "total_marks", "text": line})
+                continue
+
+            # Dotted answer line
+            if line.startswith("...") or line.startswith("___") or "..." in line:
+                current_q["elements"].append({"type": "dotted_line", "text": line})
+                continue
+
+            # Figure Caption
+            if re.match(r"^(?:Fig\.|Figure)\s*\d+.*", line, re.IGNORECASE):
+                current_q["elements"].append({"type": "figure_caption", "text": line})
+                continue
+
+            # Short label before dotted lines (e.g. "Zafer:", "Cloud storage provider:", "Email protocol:")
+            if (line.endswith(":") and len(line) < 35) or (len(line) < 30 and not line.endswith(".") and (current_q["elements"] or current_sec == "Structured")):
+                current_q["elements"].append({"type": "sub_label", "text": line})
+                continue
+
+            # General text handling (continuation vs new paragraph)
+            if len(current_q["elements"]) == 0:
+                if current_q["q_type"] == "mcq" and len(current_q["options"]) > 0:
+                    current_q["options"][-1] = (current_q["options"][-1][0], current_q["options"][-1][1] + " " + line)
+                else:
+                    # Multi-line Question Prompt stem -> append cleanly so entire stem is bold!
+                    current_q["text"] += " " + line
+            else:
+                last_elem = current_q["elements"][-1]
+                if last_elem["type"] in ("subpart", "paragraph", "bullet"):
+                    last_elem["text"] += " " + line
+                elif last_elem["type"] == "sub_item" and not last_elem["text"].startswith("..."):
+                    last_elem["text"] += " " + line
+                else:
+                    current_q["elements"].append({"type": "paragraph", "text": line})
+        else:
+            if re.match(r"^(?:Text|Source|Passage|Case Study)\s+[A-Z0-9]:", line, re.IGNORECASE):
+                blocks.append({"type": "passage_header", "text": line})
+            else:
+                blocks.append({"type": "instruction", "text": line})
+
+    flush_table()
+
+    questions_list = [b for b in blocks if b.get("type") == "question"]
+    for idx, q in enumerate(questions_list, 1):
         q["display_number"] = idx
 
     return {
         "title": meta_title,
         "unit": meta_unit,
         "tutorial": meta_tutorial,
-        "questions": questions
+        "blocks": blocks,
+        "questions": questions_list
     }
+
+
+def import_raw_document(file_bytes, filename, output_diagram_dir):
+    """
+    Imports a raw tutor question document (PDF, Word DOCX, or TXT).
+    Extracts text, questions, tables, and images.
+    Auto-detects syllabus metadata and returns (extracted_text, metadata, image_map).
+    """
+    os.makedirs(output_diagram_dir, exist_ok=True)
+    ext = os.path.splitext(filename)[1].lower()
+    
+    metadata = {
+        "curriculum": "",
+        "unit": "",
+        "tutorial": "",
+        "board": "CMB",
+        "subject": ""
+    }
+    image_map = {}
+    
+    if ext == ".pdf":
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        diagram_count = 0
+        extracted_pages = []
+        
+        start_page = 0
+        if len(doc) >= 4:
+            p2_text = doc[1].get_text("text").lower()
+            if "camdex education" in p2_text or "trusted partner" in p2_text:
+                start_page = 3
+                
+        for p_idx in range(start_page, len(doc)):
+            page = doc[p_idx]
+            
+            # Detect tables using PyMuPDF find_tables
+            tabs = page.find_tables()
+            tab_rects = [fitz.Rect(t.bbox) for t in tabs.tables] if tabs.tables else []
+            
+            page_items = []
+            
+            # 1. Add Tables
+            if tabs.tables:
+                for t in tabs.tables:
+                    t_box = fitz.Rect(t.bbox)
+                    df = t.extract()
+                    tbl_lines = []
+                    for row in df:
+                        cells = [str(c or '').strip().replace('\n', ' ') for c in row]
+                        tbl_lines.append("| " + " | ".join(cells) + " |")
+                    if tbl_lines:
+                        tbl_str = "\n".join(tbl_lines)
+                        page_items.append((t_box.y0, "table", tbl_str))
+            
+            # 2. Add Text Blocks (excluding text that falls inside table bounding boxes)
+            blocks = page.get_text("blocks")
+            for b in blocks:
+                r = fitz.Rect(b[:4])
+                if any(r.intersects(tr) for tr in tab_rects):
+                    continue
+                text = b[4].strip()
+                if not text:
+                    continue
+                low = text.lower()
+                
+                # Metadata detection on first content page
+                if p_idx == start_page:
+                    if "edexcel" in low:
+                        metadata["board"] = "EDX"
+                        metadata["curriculum"] = text
+                    elif "cambridge" in low:
+                        metadata["board"] = "CMB"
+                        metadata["curriculum"] = text
+                    if "unit:" in low or low.startswith("unit "):
+                        metadata["unit"] = text.split(":", 1)[-1].strip() if ":" in text else text
+                    if "tutorial" in low or "tute" in low:
+                        metadata["tutorial"] = text
+                    for subj in ["Computer Science", "Physics", "Chemistry", "Biology", "Mathematics", "English", "ICT", "Business", "Economics", "Accounting", "Science"]:
+                        if subj.lower() in low and not metadata["subject"]:
+                            metadata["subject"] = subj
+                            
+                # Skip header/footer repetitions on subsequent pages
+                if p_idx > start_page and ("cambridge igcse" in low or "edexcel igcse" in low or (low.startswith("unit:") and len(low) < 40)):
+                    continue
+                    
+                page_items.append((b[1], "text", text))
+            
+            # 3. Add Images
+            page_images = page.get_images(full=True)
+            for img_info in page_images:
+                xref = img_info[0]
+                base_img = doc.extract_image(xref)
+                img_bytes = base_img["image"]
+                img_ext = base_img["ext"]
+                if len(img_bytes) < 2500:
+                    continue
+                diagram_count += 1
+                diag_name = f"diagram_{diagram_count}.{img_ext}"
+                diag_path = os.path.join(output_diagram_dir, diag_name)
+                with open(diag_path, "wb") as f:
+                    f.write(img_bytes)
+                image_map[str(diagram_count)] = diag_path
+                image_map[diag_name] = diag_path
+                page_items.append((page.rect.height, "image", f"[diagram: {diagram_count}]"))
+                
+            # Sort items on this page by vertical coordinate
+            page_items.sort(key=lambda x: x[0])
+            page_strs = [it[2] for it in page_items]
+            extracted_pages.append("\n\n".join(page_strs))
+            
+        full_text = "\n\n".join(extracted_pages)
+        return full_text, metadata, image_map
+        
+    elif ext in [".docx", ".doc"] and docx is not None:
+        doc = docx.Document(io.BytesIO(file_bytes))
+        diagram_count = 0
+        extracted_elements = []
+        
+        # Extract images from docx parts
+        for rel in doc.part.rels.values():
+            if "image" in rel.target_ref:
+                img_part = rel.target_part
+                img_bytes = img_part.blob
+                if len(img_bytes) > 2500:
+                    diagram_count += 1
+                    ext_name = os.path.splitext(img_part.partname)[1] or ".png"
+                    diag_name = f"diagram_{diagram_count}{ext_name}"
+                    diag_path = os.path.join(output_diagram_dir, diag_name)
+                    with open(diag_path, "wb") as f:
+                        f.write(img_bytes)
+                    image_map[str(diagram_count)] = diag_path
+                    image_map[diag_name] = diag_path
+                    
+        # Extract paragraphs and tables
+        for elem in doc.element.body:
+            if elem.tag.endswith('p'):
+                p = docx.text.paragraph.Paragraph(elem, doc)
+                text = p.text.strip()
+                if text:
+                    extracted_elements.append(text)
+            elif elem.tag.endswith('tbl'):
+                tbl = docx.table.Table(elem, doc)
+                tbl_rows = []
+                for row in tbl.rows:
+                    cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+                    tbl_rows.append("| " + " | ".join(cells) + " |")
+                if tbl_rows:
+                    extracted_elements.append("\n".join(tbl_rows))
+                    
+        full_text = "\n\n".join(extracted_elements)
+        
+        # Detect metadata
+        for l in extracted_elements[:10]:
+            low = l.lower()
+            if "edexcel" in low:
+                metadata["board"] = "EDX"
+                metadata["curriculum"] = l
+            elif "cambridge" in low:
+                metadata["board"] = "CMB"
+                metadata["curriculum"] = l
+            if "unit:" in low or low.startswith("unit "):
+                metadata["unit"] = l.split(":", 1)[-1].strip() if ":" in l else l
+            if "tutorial" in low or "tute" in low:
+                metadata["tutorial"] = l
+            for subj in ["Computer Science", "Physics", "Chemistry", "Biology", "Mathematics", "English", "ICT", "Business", "Economics", "Accounting", "Science"]:
+                if subj.lower() in low and not metadata["subject"]:
+                    metadata["subject"] = subj
+                    
+        return full_text, metadata, image_map
+        
+    else:
+        # Plain text
+        text = file_bytes.decode("utf-8", errors="ignore")
+        return text, metadata, image_map
 
 
 class NumberedCanvas(canvas.Canvas):
     """
     Two-pass canvas to compute total pages and draw exact watermark seal
-    and footer contact strip matching Tute_1_CMB_DataRepresentation.pdf.
+    and footer contact strip matching CAMDEX Education official format.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -323,9 +777,7 @@ class NumberedCanvas(canvas.Canvas):
         w_w = self.stringWidth(web_text, font_name, font_size)
         a_w = self.stringWidth(addr_text, font_name, font_size)
         
-        r = 5.0
-        
-        # ---------------- LINE 1: Phone + Website ----------------
+        # Line 1: Phone + Website
         y1 = 43.0
         gap = 20.0
         item1_w = 14.0 + p_w
@@ -333,7 +785,7 @@ class NumberedCanvas(canvas.Canvas):
         total_l1_w = item1_w + gap + item2_w
         x1 = (PAGE_WIDTH - total_l1_w) / 2.0
         
-        # 1. Phone Icon
+        # Phone Icon
         icon_phone = os.path.join(DEFAULTS_DIR, "icon_phone.png")
         if os.path.exists(icon_phone):
             self.drawImage(icon_phone, x1, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
@@ -341,7 +793,7 @@ class NumberedCanvas(canvas.Canvas):
             self.circle(x1 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
         self.drawString(x1 + 13.5, y1, phone_text)
         
-        # 2. Globe Icon
+        # Globe Icon
         x2 = x1 + item1_w + gap
         icon_globe = os.path.join(DEFAULTS_DIR, "icon_globe.png")
         if os.path.exists(icon_globe):
@@ -350,7 +802,7 @@ class NumberedCanvas(canvas.Canvas):
             self.circle(x2 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
         self.drawString(x2 + 13.5, y1, web_text)
         
-        # ---------------- LINE 2: Location Pin ----------------
+        # Line 2: Location Pin
         y2 = 30.0
         total_l2_w = 14.0 + a_w
         x3 = (PAGE_WIDTH - total_l2_w) / 2.0
@@ -364,29 +816,6 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
-def create_teacher_card_image(photo_path=None, output_path=None):
-    """
-    If photo_path is provided, uses the uploaded image directly without drawing
-    an artificial background arch that creates double-lines/artifacts.
-    If no photo is provided, renders the clean solid blue arch (#163A8B).
-    """
-    if photo_path and os.path.exists(photo_path):
-        return photo_path
-        
-    arch_path = os.path.join(DEFAULTS_DIR, "blue_arch.png")
-    if not os.path.exists(arch_path):
-        from PIL import ImageDraw
-        arch_w, arch_h = 500, 840
-        arch_im = Image.new('RGBA', (arch_w, arch_h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(arch_im)
-        arch_color = (22, 58, 139, 255)
-        draw.pieslice([0, 0, arch_w, arch_w], 180, 360, fill=arch_color)
-        draw.rectangle([0, arch_w//2, arch_w, arch_h], fill=arch_color)
-        os.makedirs(DEFAULTS_DIR, exist_ok=True)
-        arch_im.save(arch_path)
-    return arch_path
-
-
 def build_tutorial_pdf(
     raw_text,
     subject="Computer Science",
@@ -396,24 +825,28 @@ def build_tutorial_pdf(
     curriculum_title="Cambridge IGCSE O/L",
     include_intro=True,
     include_teacher=True,
-    teacher_name="Mr. Raaid",
+    teacher_name="Mr. Yusuf Shiham",
     teacher_qualifications="BSc (Hons) in Computer Science, MSc",
-    teacher_subject="Computer Science & ICT Lead",
-    teacher_message="Welcome to this tutorial! Ensure all MCQs and structured questions are carefully answered. Practice consistently for exam success.",
+    teacher_subject="Computer Science Lead Tutor",
+    teacher_message="Welcome to this tutorial! Ensure all questions are carefully answered. Practice consistently for exam success.",
     teacher_photo_path=None,
     custom_cover_path=None,
+    image_map=None,
     font_color_hex="#1A4199",
     watermark_opacity=0.22,
     page_size=letter
 ):
     """
     Compiles full high-res tutorial PDF with Cover, Intro, Teacher Profile, and Questions.
-    Matches exact reference PDF layout, typography, underlines, and spacing.
+    Supports MCQs, structured questions, reading passages, tables, diagrams, and marks.
+    Renders all text in the official CAMDEX Deep Royal Blue theme.
     """
     parsed = parse_input_text(raw_text)
+    blocks = parsed["blocks"]
     questions = parsed["questions"]
-    if not questions:
-        raise ValueError("No questions detected in the input text. Please paste questions.")
+    
+    if not blocks and not questions:
+        raise ValueError("No questions or content detected in the input text. Please paste questions.")
 
     # Determine cover image
     cover_image_path = custom_cover_path
@@ -427,123 +860,135 @@ def build_tutorial_pdf(
     
     # Styles Setup (Exact Reference Typography)
     styles = getSampleStyleSheet()
-    
-    # Exact Camdex Deep Royal Blue
     text_color = colors.HexColor(font_color_hex)
 
     title_main_style = ParagraphStyle(
-        "TutMainTitle",
-        parent=styles["Normal"],
-        fontName="Times-Bold",
-        fontSize=24,
-        leading=28,
-        alignment=TA_CENTER,
-        textColor=text_color,
-        spaceAfter=14
+        "TutMainTitle", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=24, leading=28,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=14
     )
-
     unit_title_style = ParagraphStyle(
-        "TutUnitTitle",
-        parent=styles["Normal"],
-        fontName="Times-Bold",
-        fontSize=24,
-        leading=28,
-        alignment=TA_CENTER,
-        textColor=text_color,
-        spaceAfter=14
+        "TutUnitTitle", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=24, leading=28,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=14
     )
-
     tutorial_sub_style = ParagraphStyle(
-        "TutSubTitle",
-        parent=styles["Normal"],
-        fontName="Times-Bold",
-        fontSize=15,
-        leading=19,
-        alignment=TA_CENTER,
-        textColor=text_color,
-        spaceAfter=24
+        "TutSubTitle", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=15, leading=19,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=24
     )
-
     section_heading_style = ParagraphStyle(
-        "TutSectionHeading",
-        parent=styles["Normal"],
-        fontName="Times-Bold",
-        fontSize=15,
-        leading=19,
-        textColor=text_color,
-        spaceBefore=10,
-        spaceAfter=12
+        "TutSectionHeading", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=14.5, leading=18.5,
+        textColor=text_color, spaceBefore=14, spaceAfter=10
+    )
+    
+    # Question text: main question level 1
+    q_main_style = ParagraphStyle(
+        "QuestionMain", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=11.5, leading=15.5,
+        textColor=text_color, leftIndent=18, firstLineIndent=-18,
+        spaceBefore=4, spaceAfter=4
+    )
+    
+    # Reading Passage Header
+    passage_hdr_style = ParagraphStyle(
+        "PassageHeader", parent=styles["Normal"],
+        fontName="Times-BoldItalic", fontSize=11.5, leading=15.0,
+        textColor=text_color, leftIndent=18, spaceBefore=6, spaceAfter=4
+    )
+    
+    # Reading Passage / Question Body Paragraph
+    passage_body_style = ParagraphStyle(
+        "PassageBody", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=10.5, leading=14.5,
+        textColor=text_color, alignment=TA_JUSTIFY,
+        leftIndent=18, spaceAfter=5
+    )
+    
+    # Sub-label e.g. "Zafer", "Cloud storage provider", "You should consider:"
+    sub_label_style = ParagraphStyle(
+        "SubLabel", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=11.0, leading=14.5,
+        textColor=text_color, leftIndent=30,
+        spaceBefore=6, spaceAfter=3
     )
 
-    # Question Prompt: starts at x=72pt, number + text with clean line height
-    q_text_style = ParagraphStyle(
-        "QuestionText",
-        parent=styles["Normal"],
-        fontName="Times-Roman",
-        fontSize=12.0,
-        leading=15.0,
-        textColor=text_color,
-        leftIndent=18,
-        firstLineIndent=-18,
-        spaceAfter=3
-    )
-
-    # MCQ Options: indented at x=90pt (leftIndent=18)
-    opt_style = ParagraphStyle(
-        "OptionStyle",
-        parent=styles["Normal"],
-        fontName="Times-Roman",
-        fontSize=12.0,
-        leading=14.5,
-        textColor=text_color,
-        leftIndent=18,
-        spaceAfter=1.0
-    )
-
-    structured_line_style = ParagraphStyle(
-        "StructuredLine",
-        parent=styles["Normal"],
-        fontName="Times-Roman",
-        fontSize=11.5,
-        leading=15.0,
-        textColor=text_color,
-        leftIndent=18,
+    # Bullet point style
+    bullet_style = ParagraphStyle(
+        "BulletPoint", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=10.5, leading=14.5,
+        textColor=text_color, leftIndent=44, firstLineIndent=-14,
         spaceAfter=2.5
     )
-
-    dotted_line_style = ParagraphStyle(
-        "DottedLine",
-        parent=styles["Normal"],
-        fontName="Times-Roman",
-        fontSize=10,
-        leading=13,
-        textColor=colors.HexColor("#666666"),
-        leftIndent=18,
-        spaceAfter=3
+    
+    # Subpart Level 1: (a), (b), etc.
+    subpart_style = ParagraphStyle(
+        "SubpartStyle", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=11.0, leading=15.0,
+        textColor=text_color, alignment=TA_JUSTIFY,
+        leftIndent=24, firstLineIndent=-18,
+        spaceBefore=4, spaceAfter=3
     )
 
-    intro_heading_style = ParagraphStyle(
-        "IntroHeading",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=16,
-        leading=20,
-        textColor=COLOR_PRIMARY,
-        spaceAfter=10
+    subpart_tbl_style = ParagraphStyle(
+        "SubpartTblStyle", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=11.0, leading=15.0,
+        textColor=text_color, alignment=TA_JUSTIFY,
+        leftIndent=24, firstLineIndent=-18,
+        spaceBefore=0, spaceAfter=0
+    )
+    
+    # Sub-item Level 2: 1., 2. or (i), (ii)
+    subitem_style = ParagraphStyle(
+        "SubItemStyle", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=11.0, leading=14.5,
+        textColor=text_color, alignment=TA_JUSTIFY,
+        leftIndent=38, firstLineIndent=-16,
+        spaceBefore=2, spaceAfter=3
     )
 
-    intro_body_style = ParagraphStyle(
-        "IntroBody",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=10.5,
-        leading=15.5,
-        textColor=colors.HexColor("#333333"),
-        alignment=TA_JUSTIFY,
-        spaceAfter=10
+    subitem_tbl_style = ParagraphStyle(
+        "SubItemTblStyle", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=11.0, leading=14.5,
+        textColor=text_color, alignment=TA_JUSTIFY,
+        leftIndent=38, firstLineIndent=-16,
+        spaceBefore=0, spaceAfter=0
+    )
+    
+    # MCQ option style
+    opt_style = ParagraphStyle(
+        "OptionStyle", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=11.5, leading=15.0,
+        textColor=text_color, leftIndent=26, spaceAfter=2.0
+    )
+    
+    # Right-aligned marks
+    mark_style = ParagraphStyle(
+        "MarksStyle", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=10.5, leading=14,
+        alignment=TA_RIGHT, textColor=text_color, spaceAfter=3
+    )
+    
+    # Figure caption
+    fig_caption_style = ParagraphStyle(
+        "FigCaption", parent=styles["Normal"],
+        fontName="Times-Italic", fontSize=10.0, leading=13.0,
+        alignment=TA_CENTER, textColor=text_color, spaceBefore=4, spaceAfter=8
+    )
+    
+    # Table cell styles
+    tbl_cell_style = ParagraphStyle(
+        "TblCell", parent=styles["Normal"],
+        fontName="Times-Roman", fontSize=10.0, leading=13.0,
+        alignment=TA_CENTER, textColor=text_color
+    )
+    tbl_hdr_style = ParagraphStyle(
+        "TblHdr", parent=styles["Normal"],
+        fontName="Times-Bold", fontSize=10.0, leading=13.0,
+        alignment=TA_CENTER, textColor=text_color
     )
 
-    # Document Template with exact reference side margins (54pt matching reference)
     doc = SimpleDocTemplate(
         buf,
         pagesize=page_size,
@@ -558,7 +1003,6 @@ def build_tutorial_pdf(
     cover_pages_count = 0
 
     # ==================== PAGE 1: COVER PAGE ====================
-    # Drawn completely via canvas callback
     cover_pages_count += 1
     story.append(Spacer(1, 10))
     story.append(PageBreak())
@@ -566,11 +1010,8 @@ def build_tutorial_pdf(
     # ==================== PAGE 2: ABOUT INSTITUTE PAGE ====================
     if include_intro:
         cover_pages_count += 1
-        
-        # Position logo at upper lower half matching reference
         story.append(Spacer(1, 270))
 
-        # Camdex Brand Logo on the left using Horizontal Colored Versions -02.png (trimmed)
         logo_img = os.path.join(DEFAULTS_DIR, "p2_logo_h02_clean.png")
         if not os.path.exists(logo_img):
             logo_img = os.path.join(LOGOS_DIR, "Horizontal Colored Versions -02.png")
@@ -581,16 +1022,11 @@ def build_tutorial_pdf(
             story.append(PlatypusImage(logo_img, width=150, height=75, hAlign="LEFT"))
             story.append(Spacer(1, 24))
 
-        # 3 Paragraphs matching exact reference layout, font, size, line breaks, and color (Fully Justified)
         about_text_style = ParagraphStyle(
-            "AboutTextStyle",
-            parent=styles["Normal"],
-            fontName="Helvetica",
-            fontSize=11.0,
-            leading=14.5,
+            "AboutTextStyle", parent=styles["Normal"],
+            fontName="Helvetica", fontSize=11.0, leading=14.5,
             textColor=colors.HexColor("#4E80BC"),
-            alignment=TA_JUSTIFY,
-            spaceAfter=14
+            alignment=TA_JUSTIFY, spaceAfter=14
         )
 
         p1 = Paragraph(
@@ -626,29 +1062,23 @@ def build_tutorial_pdf(
         story.append(about_table)
         story.append(PageBreak())
 
-    # ==================== PAGE 3: TEACHER / TUTOR PROFILE PAGE ====================
+    # ==================== PAGE 3: TEACHER PROFILE PAGE ====================
     if include_teacher:
         cover_pages_count += 1
-        
-        # Position profile in exact vertical position matching reference layout
         story.append(Spacer(1, 160))
 
-        # Teacher Name (uppercase, bold navy)
         name_text = str(teacher_name or "").strip().upper()
         if not name_text:
             name_text = "MR. YUSUF SHIHAM"
 
-        # Teacher Subject Role (uppercase, vibrant light blue)
         subject_text = str(teacher_subject or "").strip().upper()
         if not subject_text:
             subject_text = "COMPUTER SCIENCE TUTOR"
 
-        # Qualifications / Subheading
         qual_text = str(teacher_qualifications or "").strip()
         if not qual_text:
             qual_text = "Undergraduate- BSc. Hons Information Technology<br/>specializing in Artificial Intelligence(Reading)"
 
-        # Bio / Description paragraphs
         bio_raw = str(teacher_message or "").strip()
         if not bio_raw:
             bio_raw = (
@@ -660,7 +1090,6 @@ def build_tutorial_pdf(
                 "with the knowledge, skills, and mindset needed to excel academically and thrive in an increasingly digital future."
             )
 
-        # Typography: Bebas Neue for titles, Poppins for body/quals
         registered_fonts = pdfmetrics.getRegisteredFontNames()
         has_bebas = "BebasNeue" in registered_fonts
         has_poppins = "Poppins" in registered_fonts
@@ -668,48 +1097,11 @@ def build_tutorial_pdf(
         name_font = "BebasNeue" if has_bebas else "Helvetica-Bold"
         body_font = "Poppins" if has_poppins else "Helvetica"
 
-        name_style = ParagraphStyle(
-            'TName',
-            parent=styles['Normal'],
-            fontName=name_font,
-            fontSize=34.0,
-            leading=32.0,
-            textColor=colors.HexColor('#163A8B'),
-            spaceAfter=3
-        )
+        name_style = ParagraphStyle('TName', parent=styles['Normal'], fontName=name_font, fontSize=34.0, leading=32.0, textColor=colors.HexColor('#163A8B'), spaceAfter=3)
+        role_style = ParagraphStyle('TRole', parent=styles['Normal'], fontName=name_font, fontSize=19.5, leading=20.5, textColor=colors.HexColor('#3577D6'), spaceAfter=10)
+        qual_style = ParagraphStyle('TQual', parent=styles['Normal'], fontName=body_font, fontSize=9.0, leading=12.2, textColor=colors.HexColor('#224483'), spaceAfter=12)
+        bio_style = ParagraphStyle('TBio', parent=styles['Normal'], fontName=body_font, fontSize=9.0, leading=13.4, textColor=colors.HexColor('#224483'), alignment=TA_JUSTIFY, spaceAfter=10)
 
-        role_style = ParagraphStyle(
-            'TRole',
-            parent=styles['Normal'],
-            fontName=name_font,
-            fontSize=19.5,
-            leading=20.5,
-            textColor=colors.HexColor('#3577D6'),
-            spaceAfter=10
-        )
-
-        qual_style = ParagraphStyle(
-            'TQual',
-            parent=styles['Normal'],
-            fontName=body_font,
-            fontSize=9.0,
-            leading=12.2,
-            textColor=colors.HexColor('#224483'),
-            spaceAfter=12
-        )
-
-        bio_style = ParagraphStyle(
-            'TBio',
-            parent=styles['Normal'],
-            fontName=body_font,
-            fontSize=9.0,
-            leading=13.4,
-            textColor=colors.HexColor('#224483'),
-            alignment=TA_JUSTIFY,
-            spaceAfter=10
-        )
-
-        # In reference design, the text column begins with title and role
         qual_formatted = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', qual_text).replace("\n", "<br/>")
         info_flowables = [
             Paragraph(name_text, name_style),
@@ -717,14 +1109,12 @@ def build_tutorial_pdf(
             Paragraph(qual_formatted, qual_style)
         ]
 
-        # Parse bio paragraphs
         for para in bio_raw.split("\n\n"):
             p_clean = para.strip().replace("\n", " ")
             if p_clean:
                 p_html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', p_clean)
                 info_flowables.append(Paragraph(p_html, bio_style))
 
-        # Teacher Photo Column: renders exact high-res photo card matching reference proportions
         target_w, target_h = 215.0, 370.0
         if teacher_photo_path and os.path.exists(teacher_photo_path):
             try:
@@ -742,7 +1132,6 @@ def build_tutorial_pdf(
         else:
             photo_flowable = Spacer(target_w, target_h)
 
-        # Use BOTTOM alignment so the photo card base and description text always finish together
         profile_table = Table([[photo_flowable, info_flowables]], colWidths=[218, 236], hAlign='CENTER')
         profile_table.setStyle(TableStyle([
             ('LEFTPADDING', (0,0), (-1,-1), 0),
@@ -756,50 +1145,267 @@ def build_tutorial_pdf(
         story.append(profile_table)
         story.append(PageBreak())
 
-    # ==================== PAGE 4+: QUESTIONS CONTENT ====================
-    # Exact Underlined Headers matching Reference
-    story.append(Paragraph(f"<u><b>{escape_xml(curriculum_title)}</b></u>", title_main_style))
-    story.append(Paragraph(f"<u><b>Unit: {escape_xml(unit_title)}</b></u>", unit_title_style))
-    story.append(Paragraph(f"<b>{escape_xml(tutorial_num)}</b>", tutorial_sub_style))
+    # ==================== PAGE 4+: QUESTIONS & PASSAGES ====================
+    story.append(Paragraph(f"<u><b>{clean_xml_text(curriculum_title)}</b></u>", title_main_style))
+    story.append(Paragraph(f"<u><b>Unit: {clean_xml_text(unit_title)}</b></u>", unit_title_style))
+    story.append(Paragraph(f"<b>{clean_xml_text(tutorial_num)}</b>", tutorial_sub_style))
     story.append(Spacer(1, 6))
 
-    current_sec = None
-    for q in questions:
-        q_sec = q.get("section", "MCQs")
-        if q_sec != current_sec:
-            current_sec = q_sec
-            sec_title = "MCQs" if current_sec == "MCQs" else "Structured Questions:"
-            story.append(Paragraph(f"<u><b>{sec_title}</b></u>", section_heading_style))
+    def resolve_image_path(ref_key):
+        if not image_map:
+            return None
+        if ref_key in image_map:
+            return image_map[ref_key]
+        if ref_key.isdigit():
+            idx = int(ref_key) - 1
+            keys = list(image_map.keys())
+            if 0 <= idx < len(keys):
+                return image_map[keys[idx]]
+        norm_ref = os.path.basename(ref_key).lower()
+        for k, v in image_map.items():
+            if norm_ref in k.lower() or norm_ref in os.path.basename(v).lower():
+                return v
+        if len(image_map) > 0:
+            return list(image_map.values())[0]
+        return None
 
-        q_block = []
+    has_started_content = False
+
+    for block in blocks:
+        b_type = block.get("type")
         
-        # Format Question Title & Number (e.g. "1. What is...")
-        q_num = q["display_number"]
-        q_text_escaped = format_subscripts(escape_xml(q["text"]))
-        full_q_paragraph = Paragraph(f"{q_num}. &nbsp;{q_text_escaped}", q_text_style)
-        q_block.append(full_q_paragraph)
+        if b_type == "section_header":
+            sec_title = block.get("title", "")
+            # Add a PageBreak before subsequent sections (e.g., Structured Questions after MCQs) so it starts on a fresh page
+            if has_started_content:
+                story.append(PageBreak())
+            has_started_content = True
+            story.append(Paragraph(f"<u><b>{clean_xml_text(sec_title)}</b></u>", section_heading_style))
+            continue
 
-        # Format MCQ Options (e.g. "A. 11010")
-        if q["options"]:
-            for letter, opt_text in q["options"]:
-                opt_escaped = format_subscripts(escape_xml(opt_text))
-                q_block.append(Paragraph(f"{letter}. &nbsp;{opt_escaped}", opt_style))
+        if b_type == "instruction":
+            has_started_content = True
+            story.append(Paragraph(f"<b>{clean_xml_text(block['text'])}</b>", passage_body_style))
+            continue
 
-        # Format Structured lines / sub-questions
-        if q.get("lines"):
-            for l in q["lines"]:
-                if not l.strip():
-                    q_block.append(Spacer(1, 4))
-                    continue
-                if l.strip().startswith("...") or "..." in l:
-                    q_block.append(Paragraph(escape_xml(l), dotted_line_style))
-                else:
-                    line_escaped = format_subscripts(escape_xml(l))
-                    q_block.append(Paragraph(line_escaped, structured_line_style))
+        if b_type == "passage_header":
+            has_started_content = True
+            story.append(Paragraph(f"<b><i>{clean_xml_text(block['text'])}</i></b>", passage_hdr_style))
+            continue
 
-        # Space between questions matching reference (~10pt)
-        q_block.append(Spacer(1, 10))
-        story.append(KeepTogether(q_block))
+        if b_type == "image":
+            has_started_content = True
+            img_path = resolve_image_path(block.get("ref", "1"))
+            if img_path and os.path.exists(img_path):
+                try:
+                    im = Image.open(img_path)
+                    w, h = im.size
+                    max_w, max_h = 440.0, 220.0
+                    scale = min(max_w / w, max_h / h, 1.0)
+                    story.append(Spacer(1, 6))
+                    story.append(PlatypusImage(img_path, width=w*scale, height=h*scale, hAlign='CENTER'))
+                    if block.get("caption"):
+                        story.append(Paragraph(clean_xml_text(block["caption"]), fig_caption_style))
+                    story.append(Spacer(1, 6))
+                except Exception:
+                    pass
+            continue
+
+        if b_type == "table":
+            has_started_content = True
+            raw_rows = parse_markdown_table(block["rows"])
+            if raw_rows:
+                col_cnt = max(len(r) for r in raw_rows)
+                col_w = min(460.0 / col_cnt, 180.0)
+                col_widths = [col_w] * col_cnt
+                t_data = []
+                for r_idx, row in enumerate(raw_rows):
+                    r_cells = []
+                    row_padded = row + [''] * (col_cnt - len(row))
+                    for cell in row_padded:
+                        st_cell = tbl_hdr_style if r_idx == 0 else tbl_cell_style
+                        r_cells.append(Paragraph(clean_xml_text(cell), st_cell))
+                    t_data.append(r_cells)
+                t_obj = Table(t_data, colWidths=col_widths, hAlign='CENTER')
+                t_obj.setStyle(TableStyle([
+                    ('GRID', (0,0), (-1,-1), 0.7, COLOR_PRIMARY),
+                    ('BACKGROUND', (0,0), (-1,0), COLOR_TABLE_HEADER),
+                    ('TOPPADDING', (0,0), (-1,-1), 5),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                    ('LEFTPADDING', (0,0), (-1,-1), 6),
+                    ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ]))
+                story.append(Spacer(1, 6))
+                story.append(t_obj)
+                story.append(Spacer(1, 6))
+            continue
+
+        if b_type == "question":
+            has_started_content = True
+            disp_num = block.get("display_number", block.get("number", 1))
+            q_text = block.get("text", "")
+            base_q_text, mark = format_marks_in_text(q_text)
+            
+            q_html = f"<b>{disp_num}.</b> &nbsp;{clean_xml_text(base_q_text)}"
+            if mark:
+                q_html += f" &nbsp; <b>{clean_xml_text(mark)}</b>"
+
+            main_q_para = Paragraph(q_html, q_main_style)
+
+            # MCQ Options handling
+            if block.get("options"):
+                opt_flowables = [main_q_para]
+                for letter, opt_text in block["options"]:
+                    opt_html = f"<b>{letter}.</b> &nbsp;{clean_xml_text(opt_text)}"
+                    opt_flowables.append(Paragraph(opt_html, opt_style))
+                opt_flowables.append(Spacer(1, 4))
+                story.append(KeepTogether(opt_flowables))
+                continue
+
+            # Structured question handling
+            structured_flowables = []
+            if block.get("elements"):
+                for elem in block["elements"]:
+                    e_type = elem.get("type")
+                    
+                    if e_type == "passage_header":
+                        structured_flowables.append(Paragraph(f"<b><i>{clean_xml_text(elem['text'])}</i></b>", passage_hdr_style))
+                    
+                    elif e_type == "paragraph":
+                        base_p, mark = format_marks_in_text(elem["text"])
+                        p_html = clean_xml_text(base_p)
+                        if mark:
+                            p_html += f" &nbsp; <b>{clean_xml_text(mark)}</b>"
+                        structured_flowables.append(Paragraph(p_html, passage_body_style))
+                    
+                    elif e_type == "sub_label":
+                        lbl_text = elem["text"].strip()
+                        if not lbl_text.endswith(":"):
+                            lbl_text += ":"
+                        structured_flowables.append(Paragraph(f"<b>{clean_xml_text(lbl_text)}</b>", sub_label_style))
+
+                    elif e_type == "bullet":
+                        b_text = clean_xml_text(elem["text"])
+                        structured_flowables.append(Paragraph(f"&bull; &nbsp;{b_text}", bullet_style))
+
+                    elif e_type == "subpart":
+                        lbl = elem.get("label", "")
+                        stext = elem.get("text", "")
+                        base_stext, mark = format_marks_in_text(stext)
+                        
+                        # Check if subpart text is essentially an answer dotted line e.g. "(a) ......"
+                        if not base_stext or base_stext.startswith("...") or base_stext.startswith("___") or set(base_stext).issubset(set(". _-")):
+                            structured_flowables.append(NumberedDottedAnswerLine(num_str=f"({lbl})", left_indent=24, color=text_color, mark=mark))
+                        else:
+                            sub_html = f"<b>({lbl})</b> &nbsp;{clean_xml_text(base_stext)}"
+                            if mark:
+                                sub_tbl = Table([
+                                    [Paragraph(sub_html, subpart_tbl_style), Paragraph(f"<b>{clean_xml_text(mark)}</b>", mark_style)]
+                                ], colWidths=[CONTENT_WIDTH - 44, 44], hAlign='LEFT')
+                                sub_tbl.setStyle(TableStyle([
+                                    ('LEFTPADDING', (0,0), (-1,-1), 0),
+                                    ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                                    ('TOPPADDING', (0,0), (-1,-1), 0),
+                                    ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+                                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                                ]))
+                                structured_flowables.append(sub_tbl)
+                            else:
+                                structured_flowables.append(Paragraph(sub_html, subpart_style))
+                    
+                    elif e_type == "sub_item":
+                        num = elem.get("num", "1")
+                        stext = elem.get("text", "")
+                        base_stext, mark = format_marks_in_text(stext)
+                        
+                        # Check if sub-item is essentially a numbered dotted line e.g. "1. ............. [1]"
+                        if not base_stext or base_stext.startswith("...") or base_stext.startswith("___") or set(base_stext).issubset(set(". _-")):
+                            structured_flowables.append(NumberedDottedAnswerLine(num_str=f"{num}.", left_indent=24, color=text_color, mark=mark))
+                        else:
+                            item_html = f"<b>{num}.</b> &nbsp;{clean_xml_text(base_stext)}"
+                            if mark:
+                                item_tbl = Table([
+                                    [Paragraph(item_html, subitem_tbl_style), Paragraph(f"<b>{clean_xml_text(mark)}</b>", mark_style)]
+                                ], colWidths=[CONTENT_WIDTH - 44, 44], hAlign='LEFT')
+                                item_tbl.setStyle(TableStyle([
+                                    ('LEFTPADDING', (0,0), (-1,-1), 0),
+                                    ('RIGHTPADDING', (0,0), (-1,-1), 0),
+                                    ('TOPPADDING', (0,0), (-1,-1), 0),
+                                    ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+                                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                                ]))
+                                structured_flowables.append(item_tbl)
+                            else:
+                                structured_flowables.append(Paragraph(item_html, subitem_style))
+                    
+                    elif e_type == "dotted_line":
+                        d_text = elem["text"]
+                        _, mark = format_marks_in_text(d_text)
+                        structured_flowables.append(DottedAnswerLine(left_indent=24, color=text_color, mark=mark))
+                    
+                    elif e_type == "total_marks":
+                        structured_flowables.append(Paragraph(f"<b>{clean_xml_text(elem['text'])}</b>", mark_style))
+                    
+                    elif e_type == "figure_caption":
+                        structured_flowables.append(Paragraph(clean_xml_text(elem["text"]), fig_caption_style))
+                    
+                    elif e_type == "image":
+                        ref = elem.get("ref", "1")
+                        img_path = resolve_image_path(ref)
+                        if img_path and os.path.exists(img_path):
+                            try:
+                                im = Image.open(img_path)
+                                w, h = im.size
+                                max_w, max_h = 420.0, 200.0
+                                scale = min(max_w / w, max_h / h, 1.0)
+                                structured_flowables.append(Spacer(1, 6))
+                                structured_flowables.append(PlatypusImage(img_path, width=w*scale, height=h*scale, hAlign='CENTER'))
+                                if elem.get("caption"):
+                                    structured_flowables.append(Paragraph(clean_xml_text(elem["caption"]), fig_caption_style))
+                                structured_flowables.append(Spacer(1, 6))
+                            except Exception:
+                                pass
+                    
+                    elif e_type == "table":
+                        raw_rows = parse_markdown_table(elem["rows"])
+                        if raw_rows:
+                            col_cnt = max(len(r) for r in raw_rows)
+                            col_w = min(460.0 / col_cnt, 180.0)
+                            col_widths = [col_w] * col_cnt
+                            t_data = []
+                            for r_idx, row in enumerate(raw_rows):
+                                r_cells = []
+                                row_padded = row + [''] * (col_cnt - len(row))
+                                for cell in row_padded:
+                                    st_cell = tbl_hdr_style if r_idx == 0 else tbl_cell_style
+                                    r_cells.append(Paragraph(clean_xml_text(cell), st_cell))
+                                t_data.append(r_cells)
+                            t_obj = Table(t_data, colWidths=col_widths, hAlign='CENTER')
+                            t_obj.setStyle(TableStyle([
+                                ('GRID', (0,0), (-1,-1), 0.7, COLOR_PRIMARY),
+                                ('BACKGROUND', (0,0), (-1,0), COLOR_TABLE_HEADER),
+                                ('TOPPADDING', (0,0), (-1,-1), 5),
+                                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                                ('LEFTPADDING', (0,0), (-1,-1), 6),
+                                ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                            ]))
+                            structured_flowables.append(Spacer(1, 6))
+                            structured_flowables.append(t_obj)
+                            structured_flowables.append(Spacer(1, 6))
+
+            # Prevent orphan question stems: Keep main question + first 1-2 elements together
+            if structured_flowables:
+                lead_count = min(len(structured_flowables), 2)
+                lead_group = [main_q_para] + structured_flowables[:lead_count]
+                story.append(KeepTogether(lead_group))
+                for rem_flowable in structured_flowables[lead_count:]:
+                    story.append(rem_flowable)
+            else:
+                story.append(main_q_para)
+
+            story.append(Spacer(1, 6))
 
     # Canvas Drawing Callbacks
     def draw_cover_canvas(c, d):
@@ -810,7 +1416,6 @@ def build_tutorial_pdf(
             except Exception:
                 pass
         
-        # Overlay Unit Title on cover (matching exact position from reference)
         c.setFillColor(colors.black)
         c.setFont("Helvetica-Bold", 22)
         c.drawString(25.0, 458.0, str(unit_title))
@@ -831,3 +1436,149 @@ def build_tutorial_pdf(
     )
 
     return buf.getvalue(), len(questions)
+
+
+def build_stamped_tutorial_pdf(
+    question_pdf_bytes,
+    subject="Chemistry",
+    board="CMB",
+    unit_title="The Particulate Nature of Matter",
+    tutorial_num="Tutorial 1",
+    curriculum_title="Cambridge IGCSE O/L",
+    include_intro=True,
+    include_teacher=True,
+    teacher_name="Mr. Yusuf Shiham",
+    teacher_qualifications="BSc (Hons) in Chemistry",
+    teacher_subject="CHEMISTRY LEAD TUTOR",
+    teacher_message="Welcome to this tutorial! Ensure all structured problems and past paper questions are carefully answered.",
+    teacher_photo_path=None,
+    custom_cover_path=None,
+    font_color_hex="#1A4199",
+    watermark_opacity=0.20
+):
+    """
+    Takes an existing past paper or science question PDF (with all diagrams, tables, and circuits),
+    generates the CAMDEX Cover, Intro, and Teacher Profile pages, and stamps the official
+    CAMDEX Double Border, Watermark Seal, and Vector Footer Strip onto every question page!
+    """
+    dummy_text = f"""
+    Title: {curriculum_title}
+    Unit: {unit_title}
+    Tutorial: {tutorial_num}
+    
+    1. Sample
+    A. Option
+    """
+    
+    front_pdf_bytes, _ = build_tutorial_pdf(
+        raw_text=dummy_text,
+        subject=subject,
+        board=board,
+        unit_title=unit_title,
+        tutorial_num=tutorial_num,
+        curriculum_title=curriculum_title,
+        include_intro=include_intro,
+        include_teacher=include_teacher,
+        teacher_name=teacher_name,
+        teacher_qualifications=teacher_qualifications,
+        teacher_subject=teacher_subject,
+        teacher_message=teacher_message,
+        teacher_photo_path=teacher_photo_path,
+        custom_cover_path=custom_cover_path,
+        font_color_hex=font_color_hex,
+        watermark_opacity=watermark_opacity
+    )
+    
+    doc_front = fitz.open(stream=front_pdf_bytes, filetype="pdf")
+    cover_pages_count = 1 + (1 if include_intro else 0) + (1 if include_teacher else 0)
+    
+    doc_front_clean = fitz.open()
+    for i in range(cover_pages_count):
+        if i < len(doc_front):
+            doc_front_clean.insert_pdf(doc_front, from_page=i, to_page=i)
+            
+    doc_content = fitz.open(stream=question_pdf_bytes, filetype="pdf")
+    
+    buf_stamp = io.BytesIO()
+    stamp_canvas = canvas.Canvas(buf_stamp, pagesize=letter)
+    
+    stamp_canvas.setStrokeColor(COLOR_PRIMARY)
+    stamp_canvas.setLineWidth(0.7)
+    stamp_canvas.rect(24.0, 24.0, PAGE_WIDTH - 48.0, PAGE_HEIGHT - 48.0, stroke=1, fill=0)
+    stamp_canvas.rect(25.6, 25.6, PAGE_WIDTH - 51.2, PAGE_HEIGHT - 51.2, stroke=1, fill=0)
+    
+    watermark_img = os.path.join(DEFAULTS_DIR, "seal_watermark.png")
+    if not os.path.exists(watermark_img):
+        watermark_img = os.path.join(LOGOS_DIR, "Seal Logo Colored Version-02.png")
+    if os.path.exists(watermark_img):
+        stamp_canvas.setFillAlpha(watermark_opacity)
+        stamp_canvas.drawImage(
+            watermark_img,
+            (PAGE_WIDTH - 518.0) / 2.0,
+            (PAGE_HEIGHT - 518.0) / 2.0 - 15.0,
+            width=518.0,
+            height=518.0,
+            preserveAspectRatio=True,
+            mask='auto'
+        )
+    
+    stamp_canvas.setFillAlpha(1.0)
+    
+    stamp_canvas.setFillColor(COLOR_PRIMARY)
+    stamp_canvas.setStrokeColor(COLOR_PRIMARY)
+    font_name = "Helvetica-Bold"
+    font_size = 7.5
+    stamp_canvas.setFont(font_name, font_size)
+    phone_text = "+94 77 519 0334"
+    web_text = "camdexedu.com"
+    addr_text = "5 De S Jayasinghe Mawatha, Kohuwala, Nugegoda 10250"
+    
+    p_w = stamp_canvas.stringWidth(phone_text, font_name, font_size)
+    w_w = stamp_canvas.stringWidth(web_text, font_name, font_size)
+    a_w = stamp_canvas.stringWidth(addr_text, font_name, font_size)
+    
+    # Line 1: Phone + Web
+    y1 = 43.0
+    gap = 20.0
+    total_l1_w = 14.0 + p_w + gap + 14.0 + w_w
+    x1 = (PAGE_WIDTH - total_l1_w) / 2.0
+    
+    icon_phone = os.path.join(DEFAULTS_DIR, "icon_phone.png")
+    if os.path.exists(icon_phone):
+        stamp_canvas.drawImage(icon_phone, x1, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+    else:
+        stamp_canvas.circle(x1 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
+    stamp_canvas.drawString(x1 + 13.5, y1, phone_text)
+    
+    x2 = x1 + 14.0 + p_w + gap
+    icon_globe = os.path.join(DEFAULTS_DIR, "icon_globe.png")
+    if os.path.exists(icon_globe):
+        stamp_canvas.drawImage(icon_globe, x2, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+    else:
+        stamp_canvas.circle(x2 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
+    stamp_canvas.drawString(x2 + 13.5, y1, web_text)
+    
+    # Line 2: Address
+    y2 = 30.0
+    total_l2_w = 14.0 + a_w
+    x3 = (PAGE_WIDTH - total_l2_w) / 2.0
+    icon_pin = os.path.join(DEFAULTS_DIR, "icon_pin.png")
+    if os.path.exists(icon_pin):
+        stamp_canvas.drawImage(icon_pin, x3, y2 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+    else:
+        stamp_canvas.circle(x3 + 5.0, y2 + 4.0, 5.0, stroke=0, fill=1)
+    stamp_canvas.drawString(x3 + 13.5, y2, addr_text)
+    
+    stamp_canvas.save()
+    stamp_pdf_bytes = buf_stamp.getvalue()
+    stamp_doc = fitz.open(stream=stamp_pdf_bytes, filetype="pdf")
+    
+    for page in doc_content:
+        page.show_pdf_page(page.rect, stamp_doc, 0, overlay=True)
+        
+    final_doc = fitz.open()
+    final_doc.insert_pdf(doc_front_clean)
+    final_doc.insert_pdf(doc_content)
+    
+    output_bytes = final_doc.tobytes()
+    return output_bytes, len(doc_content)
