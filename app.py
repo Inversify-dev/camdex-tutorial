@@ -180,6 +180,34 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+import shutil
+import time
+import uuid
+
+# Session Isolation & Auto-Cleanup of Temp Assets
+def get_session_temp_dir():
+    """Returns a unique temporary directory isolated to the current user session and auto-purges old sessions."""
+    base_temp = os.path.join(pdf_generator.BASE_DIR, "assets", "temp")
+    os.makedirs(base_temp, exist_ok=True)
+    
+    # Auto-cleanup session directories older than 2 hours to prevent disk growth forever
+    now = time.time()
+    try:
+        for item in os.listdir(base_temp):
+            item_path = os.path.join(base_temp, item)
+            if os.path.isdir(item_path):
+                if now - os.path.getmtime(item_path) > 7200:
+                    shutil.rmtree(item_path, ignore_errors=True)
+    except Exception:
+        pass
+        
+    if "user_session_id" not in st.session_state:
+        st.session_state["user_session_id"] = str(uuid.uuid4())[:12]
+        
+    session_dir = os.path.join(base_temp, st.session_state["user_session_id"])
+    os.makedirs(session_dir, exist_ok=True)
+    return session_dir
+
 # ----------------- SIDEBAR CONTROLS -----------------
 with st.sidebar:
     brand_logo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "logos", "Horizontal Colored Versions -01.png")
@@ -192,13 +220,12 @@ with st.sidebar:
     
     col_b1, col_b2 = st.columns(2)
     with col_b1:
-        board_index = 0
-        if "detected_board" in st.session_state:
-            board_index = 1 if st.session_state["detected_board"] == "EDX" else 0
+        if "exam_board_select" not in st.session_state:
+            st.session_state["exam_board_select"] = "Cambridge (CMB)"
         board_option = st.selectbox(
             "Exam Board",
             ["Cambridge (CMB)", "Edexcel (EDX)"],
-            index=board_index
+            key="exam_board_select"
         )
         board_code = "CMB" if "CMB" in board_option else "EDX"
     
@@ -208,20 +235,22 @@ with st.sidebar:
             "Biology", "Science", "ICT", "Business", "Economics",
             "Accounting", "English"
         ]
-        subj_index = 0
-        if "detected_subject" in st.session_state and st.session_state["detected_subject"] in subject_list:
-            subj_index = subject_list.index(st.session_state["detected_subject"])
-        selected_subject = st.selectbox("Subject", subject_list, index=subj_index)
+        if "subject_select" not in st.session_state:
+            st.session_state["subject_select"] = "Computer Science"
+        selected_subject = st.selectbox("Subject", subject_list, key="subject_select")
 
-    def_unit = st.session_state.get("detected_unit", "Communication & the Internet")
-    unit_title = st.text_input("Unit / Topic Title", value=def_unit, key="unit_title_input")
+    if "unit_title_input" not in st.session_state:
+        st.session_state["unit_title_input"] = "Communication & the Internet"
+    unit_title = st.text_input("Unit / Topic Title", key="unit_title_input")
 
-    def_tut = st.session_state.get("detected_tutorial", "Tutorial 5 – August/September/October")
-    tutorial_number = st.text_input("Tutorial # / Title", value=def_tut, key="tut_title_input")
+    if "tut_title_input" not in st.session_state:
+        st.session_state["tut_title_input"] = "Tutorial 5 – August/September/October"
+    tutorial_number = st.text_input("Tutorial # / Title", key="tut_title_input")
     
     curriculum_default = "Edexcel IGCSE (2026/2027)" if board_code == "EDX" else "Cambridge IGCSE O/L"
-    def_curr = st.session_state.get("detected_curriculum", curriculum_default)
-    curriculum_title = st.text_input("Curriculum Header", value=def_curr, key="curr_title_input")
+    if "curr_title_input" not in st.session_state:
+        st.session_state["curr_title_input"] = curriculum_default
+    curriculum_title = st.text_input("Curriculum Header", key="curr_title_input")
 
     st.markdown("---")
     st.markdown("### Teacher Profile (Page 3)")
@@ -447,11 +476,11 @@ final_teacher_photo_path = None
 if full_active_photo_path and os.path.exists(full_active_photo_path):
     final_teacher_photo_path = full_active_photo_path
 
+session_temp_dir = get_session_temp_dir()
+
 temp_cover_path = None
 if custom_cover_upload:
-    temp_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_cover_path = os.path.join(temp_dir, f"uploaded_cover_{custom_cover_upload.name}")
+    temp_cover_path = os.path.join(session_temp_dir, f"cover_{custom_cover_upload.name}")
     with open(temp_cover_path, "wb") as f:
         f.write(custom_cover_upload.getbuffer())
 
@@ -473,7 +502,8 @@ with main_col:
     if direct_uploaded_file is not None:
         f_key = f"direct_{direct_uploaded_file.name}_{direct_uploaded_file.size}"
         if st.session_state.get("last_direct_doc") != f_key:
-            temp_diag_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp", "diagrams")
+            temp_diag_dir = os.path.join(session_temp_dir, "diagrams")
+            os.makedirs(temp_diag_dir, exist_ok=True)
             with st.spinner("Analyzing document metadata and extracting structure..."):
                 _, detected_meta, _ = pdf_generator.import_raw_document(
                     direct_uploaded_file.getvalue(),
@@ -482,15 +512,15 @@ with main_col:
                 )
                 st.session_state["last_direct_doc"] = f_key
                 if detected_meta.get("board"):
-                    st.session_state["detected_board"] = detected_meta["board"]
-                if detected_meta.get("subject"):
-                    st.session_state["detected_subject"] = detected_meta["subject"]
+                    st.session_state["exam_board_select"] = "Edexcel (EDX)" if detected_meta["board"] == "EDX" else "Cambridge (CMB)"
+                if detected_meta.get("subject") and detected_meta["subject"] in subject_list:
+                    st.session_state["subject_select"] = detected_meta["subject"]
                 if detected_meta.get("unit"):
-                    st.session_state["detected_unit"] = detected_meta["unit"]
+                    st.session_state["unit_title_input"] = detected_meta["unit"]
                 if detected_meta.get("tutorial"):
-                    st.session_state["detected_tutorial"] = detected_meta["tutorial"]
+                    st.session_state["tut_title_input"] = detected_meta["tutorial"]
                 if detected_meta.get("curriculum"):
-                    st.session_state["detected_curriculum"] = detected_meta["curriculum"]
+                    st.session_state["curr_title_input"] = detected_meta["curriculum"]
             
             # Auto-trigger immediate generation on upload
             st.session_state["auto_generate_direct"] = True
@@ -554,24 +584,32 @@ if should_run_direct:
         except Exception as e:
             st.error(f"Direct conversion error: {str(e)}")
 
-def render_pdf_pages_to_images(pdf_bytes, scale=1.5):
-    """Render PDF pages to PIL images for universal cross-device preview."""
+@st.cache_data(max_entries=10)
+def get_pdf_total_pages(pdf_bytes):
     try:
         import pymupdf as fitz
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        images = []
-        for page in doc:
-            pix = page.get_pixmap(dpi=144)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            images.append(img)
-        return images
+        count = len(doc)
+        doc.close()
+        return count
     except Exception:
-        try:
-            import pypdfium2 as pdfium
-            pdf = pdfium.PdfDocument(pdf_bytes)
-            return [pdf[i].render(scale=scale).to_pil() for i in range(len(pdf))]
-        except Exception:
-            return []
+        return 1
+
+@st.cache_data(max_entries=20)
+def render_single_pdf_page(pdf_bytes, page_idx=0, dpi=120):
+    """Render only ONE specific page on demand to keep RAM usage minimal (<15 MB)."""
+    try:
+        import pymupdf as fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if page_idx < 0 or page_idx >= len(doc):
+            page_idx = 0
+        page = doc[page_idx]
+        pix = page.get_pixmap(dpi=dpi)
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        doc.close()
+        return img
+    except Exception:
+        return None
 
 # ----------------- PREVIEW COLUMN -----------------
 with preview_col:
@@ -601,90 +639,82 @@ with preview_col:
 
         tab_page_by_page, tab_all_pages = st.tabs(["Page-by-Page View", "Continuous Booklet View"])
 
-        page_images = render_pdf_pages_to_images(pdf_bytes, scale=1.8)
-        total_pages = len(page_images)
+        total_pages = get_pdf_total_pages(pdf_bytes)
 
         with tab_page_by_page:
-            if page_images:
+            try:
+                cur_idx = int(st.session_state.get("preview_page_idx", 0))
+            except (ValueError, TypeError):
+                cur_idx = 0
+
+            if cur_idx < 0 or cur_idx >= total_pages:
+                cur_idx = 0
+            st.session_state["preview_page_idx"] = cur_idx
+
+            def go_prev_page():
                 try:
-                    cur_idx = int(st.session_state.get("preview_page_idx", 0))
-                except (ValueError, TypeError):
-                    cur_idx = 0
-
-                if cur_idx < 0 or cur_idx >= total_pages:
-                    cur_idx = 0
-                st.session_state["preview_page_idx"] = cur_idx
-
-                def go_prev_page():
-                    try:
-                        v = int(st.session_state.get("preview_page_idx", 0))
-                    except Exception:
-                        v = 0
-                    if v > 0:
-                        st.session_state["preview_page_idx"] = v - 1
-
-                def go_next_page():
-                    try:
-                        v = int(st.session_state.get("preview_page_idx", 0))
-                    except Exception:
-                        v = 0
-                    if v < total_pages - 1:
-                        st.session_state["preview_page_idx"] = v + 1
-
-                col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
-
-                with col_nav1:
-                    st.button(
-                        "Previous",
-                        on_click=go_prev_page,
-                        disabled=(cur_idx == 0),
-                        width="stretch",
-                        key="btn_prev_page"
-                    )
-
-                with col_nav2:
-                    page_labels = [f"Page {i+1} of {total_pages}" for i in range(total_pages)]
-                    st.selectbox(
-                        "Page Selector",
-                        options=list(range(total_pages)),
-                        format_func=lambda i: page_labels[i],
-                        key="preview_page_idx",
-                        label_visibility="collapsed"
-                    )
-
-                with col_nav3:
-                    st.button(
-                        "Next",
-                        on_click=go_next_page,
-                        disabled=(cur_idx >= total_pages - 1),
-                        width="stretch",
-                        key="btn_next_page"
-                    )
-
-                try:
-                    active_idx = int(st.session_state.get("preview_page_idx", 0))
+                    v = int(st.session_state.get("preview_page_idx", 0))
                 except Exception:
-                    active_idx = 0
+                    v = 0
+                if v > 0:
+                    st.session_state["preview_page_idx"] = v - 1
 
-                if active_idx < 0 or active_idx >= total_pages:
-                    active_idx = 0
+            def go_next_page():
+                try:
+                    v = int(st.session_state.get("preview_page_idx", 0))
+                except Exception:
+                    v = 0
+                if v < total_pages - 1:
+                    st.session_state["preview_page_idx"] = v + 1
 
-                current_img = page_images[active_idx]
+            col_nav1, col_nav2, col_nav3 = st.columns([1, 2, 1])
+
+            with col_nav1:
+                st.button(
+                    "Previous",
+                    on_click=go_prev_page,
+                    disabled=(cur_idx == 0),
+                    width="stretch",
+                    key="btn_prev_page"
+                )
+
+            with col_nav2:
+                page_labels = [f"Page {i+1} of {total_pages}" for i in range(total_pages)]
+                st.selectbox(
+                    "Page Selector",
+                    options=list(range(total_pages)),
+                    format_func=lambda i: page_labels[i],
+                    key="preview_page_idx",
+                    label_visibility="collapsed"
+                )
+
+            with col_nav3:
+                st.button(
+                    "Next",
+                    on_click=go_next_page,
+                    disabled=(cur_idx >= total_pages - 1),
+                    width="stretch",
+                    key="btn_next_page"
+                )
+
+            current_img = render_single_pdf_page(pdf_bytes, page_idx=cur_idx, dpi=130)
+            if current_img:
                 st.image(
                     current_img,
-                    caption=f"Showing Page {active_idx + 1} of {total_pages} (CAMDEX Official Preview)",
+                    caption=f"Showing Page {cur_idx + 1} of {total_pages} (CAMDEX Official Preview)",
                     width="stretch"
                 )
             else:
-                st.warning("Could not render page images. Please use the Download button to view.")
+                st.warning("Preview not available. Please click the Download button to view.")
 
         with tab_all_pages:
-            if page_images:
-                for idx, img in enumerate(page_images):
-                    st.markdown(f"<div style='font-size: 13px; font-weight: 700; color: #1A4199; margin: 16px 0 6px 0; background: #eef2ff; padding: 4px 12px; border-radius: 6px; display: inline-block;'>Page {idx+1} of {total_pages}</div>", unsafe_allow_html=True)
-                    st.image(img, width="stretch")
-                    if idx < total_pages - 1:
-                        st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px dashed #cbd5e1;'/>", unsafe_allow_html=True)
+            for idx in range(total_pages):
+                st.markdown(f"<div style='font-size: 13px; font-weight: 700; color: #1A4199; margin: 16px 0 6px 0; background: #eef2ff; padding: 4px 12px; border-radius: 6px; display: inline-block;'>Page {idx+1} of {total_pages}</div>", unsafe_allow_html=True)
+                page_img = render_single_pdf_page(pdf_bytes, page_idx=idx, dpi=110)
+                if page_img:
+                    st.image(page_img, width="stretch")
+                if idx < total_pages - 1:
+                    st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px dashed #cbd5e1;'/>", unsafe_allow_html=True)
     else:
         st.info("Upload a document above or click 'Convert & Publish Document' to build your formatted tutorial PDF.")
         
