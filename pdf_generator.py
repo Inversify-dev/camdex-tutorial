@@ -1768,8 +1768,8 @@ def build_direct_raw_tutorial_pdf(
 
         clip_rect = fitz.Rect(clip_x0, clip_y0, clip_x1, clip_y1)
 
-        # Target printable area extending border-to-border inside the double blue border
-        target_box = fitz.Rect(27.0, 27.0, PAGE_WIDTH - 27.0, PAGE_HEIGHT - 54.0)
+        # Target printable area: left & right unchanged (27.0 to 585.0), with increased padding on top and bottom
+        target_box = fitz.Rect(27.0, 48.0, PAGE_WIDTH - 27.0, 716.0)
 
         for q_idx in range(start_page, end_page):
             # Create standard Letter page (612 x 792)
