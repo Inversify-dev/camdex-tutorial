@@ -1416,9 +1416,59 @@ def build_tutorial_pdf(
             except Exception:
                 pass
         
-        c.setFillColor(colors.black)
-        c.setFont("Helvetica-Bold", 22)
-        c.drawString(25.0, 458.0, str(unit_title))
+        # Only the Unit Title is rendered inside the white placeholder capsule
+        unit_str = str(unit_title or "Data Representation").strip()
+        if unit_str:
+            font_name = "Helvetica-Bold"
+            max_width = 250.0
+            max_height = 84.0
+            
+            chosen_lines = [unit_str]
+            chosen_size = 24
+            chosen_leading = 28
+            
+            # Dynamically reduce font size from 26pt down to 10pt until it fits cleanly in 1-3 lines
+            for font_size in range(26, 9, -1):
+                leading = font_size * 1.18
+                words = unit_str.split()
+                lines = []
+                curr_line = ""
+                fits = True
+                
+                for w in words:
+                    if c.stringWidth(w, font_name, font_size) > max_width:
+                        fits = False
+                        break
+                    test_l = (curr_line + " " + w).strip()
+                    if c.stringWidth(test_l, font_name, font_size) <= max_width:
+                        curr_line = test_l
+                    else:
+                        if curr_line:
+                            lines.append(curr_line)
+                        curr_line = w
+                if curr_line:
+                    lines.append(curr_line)
+                    
+                if not fits:
+                    continue
+                    
+                total_h = (len(lines) - 1) * leading + font_size
+                if total_h <= max_height and len(lines) <= 4:
+                    chosen_lines = lines
+                    chosen_size = font_size
+                    chosen_leading = leading
+                    break
+                    
+            c.setFont(font_name, chosen_size)
+            c.setFillColor(colors.HexColor("#002060"))
+            
+            # Vertically center inside the white capsule (center y ≈ 466.0 pt)
+            capsule_center_y = 466.0
+            num_lines = len(chosen_lines)
+            first_y = capsule_center_y + ((num_lines - 1) * chosen_leading / 2.0) - (chosen_size * 0.15)
+            
+            for i, line in enumerate(chosen_lines):
+                c.drawString(28.0, first_y - (i * chosen_leading), line)
         
         c.restoreState()
 
@@ -1436,6 +1486,299 @@ def build_tutorial_pdf(
     )
 
     return buf.getvalue(), len(questions)
+
+
+def recolor_pdf_stream_to_blue(stream_bytes, blue_rgb=(0.102, 0.255, 0.600)):
+    """
+    Recolors black/dark gray text and vector operators in PDF content streams to official CAMDEX Blue.
+    Prepends default color state and replaces 0 g, 0 G, 0 0 0 rg, 0 0 0 RG, and CMYK black.
+    """
+    r, g, b = blue_rgb
+    blue_rg = f"{r:.3f} {g:.3f} {b:.3f} rg".encode()
+    blue_RG = f"{r:.3f} {g:.3f} {b:.3f} RG".encode()
+    
+    prefix = b"q " + blue_rg + b" " + blue_RG + b"\n"
+    suffix = b"\nQ"
+    
+    # Replace black/dark gray fill and stroke operators
+    res = re.sub(rb'\b0(?:\.[0-2]\d*)?\s+g\b', blue_rg, stream_bytes)
+    res = re.sub(rb'\b0(?:\.[0-2]\d*)?\s+G\b', blue_RG, res)
+    res = re.sub(rb'\b0(?:\.[0-2]\d*)?\s+0(?:\.[0-2]\d*)?\s+0(?:\.[0-2]\d*)?\s+rg\b', blue_rg, res)
+    res = re.sub(rb'\b0(?:\.[0-2]\d*)?\s+0(?:\.[0-2]\d*)?\s+0(?:\.[0-2]\d*)?\s+RG\b', blue_RG, res)
+    res = re.sub(rb'\b0(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+k\b', blue_rg, res)
+    res = re.sub(rb'\b0(?:\.0+)?\s+0(?:\.0+)?\s+0(?:\.0+)?\s+1(?:\.0+)?\s+K\b', blue_RG, res)
+    
+    return prefix + res + suffix
+
+
+def build_direct_raw_tutorial_pdf(
+    file_bytes,
+    filename="tutorial.pdf",
+    subject="Computer Science",
+    board="CMB",
+    unit_title="Data Representation",
+    tutorial_num="Tutorial 1",
+    curriculum_title="Cambridge IGCSE O/L",
+    include_intro=True,
+    include_teacher=True,
+    teacher_name="Mr. Yusuf Shiham",
+    teacher_qualifications="BSc (Hons) in Computer Science, MSc",
+    teacher_subject="COMPUTER SCIENCE LEAD TUTOR",
+    teacher_message="Welcome to this tutorial! Ensure all structured problems and past paper questions are carefully answered.",
+    teacher_photo_path=None,
+    custom_cover_path=None,
+    image_map=None,
+    font_color_hex="#1A4199",
+    watermark_opacity=0.20
+):
+    """
+    Direct 1-Click Converter: Takes a raw tutor question document (PDF, Word DOCX, or TXT),
+    and directly produces the full, publication-ready CAMDEX document in official CAMDEX Blue (#1A4199).
+    
+    If given a raw PDF:
+      - Automatically isolates question pages (skipping old cover/intro pages if present).
+      - Converts all question text and vector lines from black to official CAMDEX Blue (#1A4199).
+      - Rescales and centers question content into the safe printable bounding box [38, 70, 574, 735].
+      - Stamps the official CAMDEX Header (Horizontal Logo on left, Curriculum & Unit title on right, blue dividing rule).
+      - Stamps the Double Blue Border and centered Watermark Seal.
+      - Stamps the official Vector Footer Strip with Phone, Website, Address, and 'Page X of Y' pagination.
+      - Prepends the official 2026/2027 Cover Page (Subject + Board with typography), About Page, and Teacher Profile Page.
+    
+    If given Word DOCX / TXT:
+      - Automatically extracts questions, tables, diagrams, and compiles via the high-resolution ReportLab engine.
+    """
+    ext = os.path.splitext(filename)[1].lower() if filename else ".pdf"
+    
+    # ------------------ CASE 1: RAW PDF DOCUMENT ------------------
+    if ext == ".pdf":
+        doc_src = fitz.open(stream=file_bytes, filetype="pdf")
+        
+        # Determine start_page: Only skip if this is an already branded CAMDEX document with the CAMDEX About page at page 2
+        start_page = 0
+        if len(doc_src) >= 3:
+            p2_txt = doc_src[1].get_text("text").lower()
+            if "camdex education is your trusted" in p2_txt or "trusted partner in igcse" in p2_txt:
+                start_page = 3
+        
+        # Trim accidental trailing empty blank pages at the end of the document
+        end_page = len(doc_src)
+        while end_page > start_page:
+            last_p = doc_src[end_page - 1]
+            if not last_p.get_text("text").strip() and len(last_p.get_images()) == 0 and len(last_p.get_drawings()) == 0:
+                end_page -= 1
+            else:
+                break
+                
+        question_count_pages = end_page - start_page
+        
+        # 1. Build Cover, Intro, and Teacher Profile pages
+        dummy_text = f"Title: {curriculum_title}\nUnit: {unit_title}\nTutorial: {tutorial_num}\n\n1. Sample\nA. Option"
+        front_pdf_bytes, _ = build_tutorial_pdf(
+            raw_text=dummy_text,
+            subject=subject,
+            board=board,
+            unit_title=unit_title,
+            tutorial_num=tutorial_num,
+            curriculum_title=curriculum_title,
+            include_intro=include_intro,
+            include_teacher=include_teacher,
+            teacher_name=teacher_name,
+            teacher_qualifications=teacher_qualifications,
+            teacher_subject=teacher_subject,
+            teacher_message=teacher_message,
+            teacher_photo_path=teacher_photo_path,
+            custom_cover_path=custom_cover_path,
+            font_color_hex=font_color_hex,
+            watermark_opacity=watermark_opacity
+        )
+        
+        doc_front = fitz.open(stream=front_pdf_bytes, filetype="pdf")
+        cover_pages_count = 1 + (1 if include_intro else 0) + (1 if include_teacher else 0)
+        
+        # Check if pre-rendered final teacher page exists for this teacher
+        teacher_final_dir = os.path.join(BASE_DIR, "About tutor Pages 2026-2027 Complete", "About tutor Pages 2026-2027", "Final pages")
+        teacher_page_custom_img = None
+        if include_teacher and os.path.exists(teacher_final_dir) and not teacher_photo_path:
+            norm_name = str(teacher_name or "").lower()
+            norm_subj = str(subject or "").lower()
+            match_file = None
+            for tf in os.listdir(teacher_final_dir):
+                tf_low = tf.lower()
+                if "afra" in norm_name or ("accounting" in norm_subj and "afra" in tf_low):
+                    match_file = tf; break
+                elif "devin" in norm_name or ("math" in norm_subj and "devin" in tf_low):
+                    match_file = tf; break
+                elif "dimitri" in norm_name or ("english" in norm_subj and "dimitri" in tf_low):
+                    match_file = tf; break
+                elif "haani" in norm_name or ("economics" in norm_subj and "haani" in tf_low):
+                    match_file = tf; break
+                elif "prasanna" in norm_name or ("business" in norm_subj and "prasanna" in tf_low):
+                    match_file = tf; break
+                elif "qaidh" in norm_name or ("ict" in norm_subj and "qaidh" in tf_low):
+                    match_file = tf; break
+                elif "shehan" in norm_name or (("chemistry" in norm_subj or "physics" in norm_subj or "biology" in norm_subj) and "shehan" in tf_low):
+                    match_file = tf; break
+                elif "yusuf" in norm_name or ("computer science" in norm_subj and "yusuf" in tf_low):
+                    match_file = tf; break
+            
+            if match_file:
+                teacher_page_custom_img = os.path.join(teacher_final_dir, match_file)
+
+        doc_front_clean = fitz.open()
+        for i in range(cover_pages_count):
+            if i < len(doc_front):
+                # If page 3 is teacher and we have full pre-rendered page
+                if i == cover_pages_count - 1 and include_teacher and teacher_page_custom_img and os.path.exists(teacher_page_custom_img):
+                    t_page = doc_front_clean.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
+                    t_page.insert_image(t_page.rect, filename=teacher_page_custom_img)
+                else:
+                    doc_front_clean.insert_pdf(doc_front, from_page=i, to_page=i)
+        
+        # 2. Recolor and format Question Pages
+        doc_questions_clean = fitz.open()
+        
+        # Recolor source doc content streams to CAMDEX Blue
+        for p in doc_src:
+            for xref in p.get_contents():
+                st = doc_src.xref_stream(xref)
+                if st:
+                    doc_src.update_stream(xref, recolor_pdf_stream_to_blue(st))
+                    
+        total_final_pages = cover_pages_count + question_count_pages
+        
+        logo_img_path = os.path.join(LOGOS_DIR, "Horizontal Colored Versions -01.png")
+        if not os.path.exists(logo_img_path):
+            logo_img_path = os.path.join(DEFAULTS_DIR, "logo_horizontal.png")
+            
+        watermark_img_path = os.path.join(DEFAULTS_DIR, "seal_watermark.png")
+        if not os.path.exists(watermark_img_path):
+            watermark_img_path = os.path.join(LOGOS_DIR, "Seal Logo Colored Version-02.png")
+            
+        icon_phone = os.path.join(DEFAULTS_DIR, "icon_phone.png")
+        icon_globe = os.path.join(DEFAULTS_DIR, "icon_globe.png")
+        icon_pin = os.path.join(DEFAULTS_DIR, "icon_pin.png")
+        
+        # Pre-build official CAMDEX Base Question Stamp (Double Border, Watermark, Footer Contact) ONCE
+        buf_stamp = io.BytesIO()
+        stamp_canv = canvas.Canvas(buf_stamp, pagesize=letter)
+        
+        # Double Blue Border
+        stamp_canv.setStrokeColor(COLOR_PRIMARY)
+        stamp_canv.setLineWidth(0.7)
+        stamp_canv.rect(24.0, 24.0, PAGE_WIDTH - 48.0, PAGE_HEIGHT - 48.0, stroke=1, fill=0)
+        stamp_canv.rect(25.6, 25.6, PAGE_WIDTH - 51.2, PAGE_HEIGHT - 51.2, stroke=1, fill=0)
+        
+        # Background Watermark Seal
+        if os.path.exists(watermark_img_path):
+            stamp_canv.setFillAlpha(watermark_opacity)
+            w_size = 518.0
+            stamp_canv.drawImage(
+                watermark_img_path,
+                (PAGE_WIDTH - w_size) / 2.0,
+                (PAGE_HEIGHT - w_size) / 2.0 - 10.0,
+                width=w_size,
+                height=w_size,
+                preserveAspectRatio=True,
+                mask='auto'
+            )
+            stamp_canv.setFillAlpha(1.0)
+            
+        # Footer Strip (Contact details only - no page numbers)
+        font_name = "Helvetica-Bold"
+        font_size = 7.5
+        stamp_canv.setFont(font_name, font_size)
+        stamp_canv.setFillColor(COLOR_PRIMARY)
+        stamp_canv.setStrokeColor(COLOR_PRIMARY)
+        phone_text = "+94 77 519 0334"
+        web_text = "camdexedu.com"
+        addr_text = "5 De S Jayasinghe Mawatha, Kohuwala, Nugegoda 10250"
+        
+        p_w = stamp_canv.stringWidth(phone_text, font_name, font_size)
+        w_w = stamp_canv.stringWidth(web_text, font_name, font_size)
+        a_w = stamp_canv.stringWidth(addr_text, font_name, font_size)
+        
+        # Line 1: Phone + Web
+        y1 = 43.0
+        gap = 20.0
+        total_l1_w = 14.0 + p_w + gap + 14.0 + w_w
+        x1 = (PAGE_WIDTH - total_l1_w) / 2.0
+        
+        if os.path.exists(icon_phone):
+            stamp_canv.drawImage(icon_phone, x1, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+        else:
+            stamp_canv.circle(x1 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
+        stamp_canv.drawString(x1 + 13.5, y1, phone_text)
+        
+        x2 = x1 + 14.0 + p_w + gap
+        if os.path.exists(icon_globe):
+            stamp_canv.drawImage(icon_globe, x2, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+        else:
+            stamp_canv.circle(x2 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
+        stamp_canv.drawString(x2 + 13.5, y1, web_text)
+        
+        # Line 2: Address
+        y2 = 30.0
+        total_l2_w = 14.0 + a_w
+        x3 = (PAGE_WIDTH - total_l2_w) / 2.0
+        if os.path.exists(icon_pin):
+            stamp_canv.drawImage(icon_pin, x3, y2 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
+        else:
+            stamp_canv.circle(x3 + 5.0, y2 + 4.0, 5.0, stroke=0, fill=1)
+        stamp_canv.drawString(x3 + 13.5, y2, addr_text)
+        
+        stamp_canv.save()
+        base_stamp_doc = fitz.open(stream=buf_stamp.getvalue(), filetype="pdf")
+        
+        for q_idx in range(start_page, len(doc_src)):
+            # Create standard Letter page (612 x 792)
+            target_p = doc_questions_clean.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
+            
+            # 1. Place question content from source into clean, fully centered safe printable box
+            # Top: 36pt (inside double border at 25.6pt), Bottom: 54pt (above footer), Sides: 36pt
+            target_box = fitz.Rect(36.0, 36.0, PAGE_WIDTH - 36.0, PAGE_HEIGHT - 54.0)
+            target_p.show_pdf_page(target_box, doc_src, q_idx)
+            
+            # 2. Overlay Base Stamp (Double Blue Border, Centered Watermark, Contact Footer Strip)
+            target_p.show_pdf_page(target_p.rect, base_stamp_doc, 0, overlay=True)
+            
+        final_doc = fitz.open()
+        final_doc.insert_pdf(doc_front_clean)
+        final_doc.insert_pdf(doc_questions_clean)
+        
+        return final_doc.tobytes(), question_count_pages
+        
+    # ------------------ CASE 2: WORD DOCX OR TEXT ------------------
+    else:
+        temp_dir = os.path.join(BASE_DIR, "assets", "temp", "diagrams")
+        ext_text, ext_meta, ext_img_map = import_raw_document(file_bytes, filename, temp_dir)
+        combined_img_map = {**(image_map or {}), **ext_img_map}
+        
+        final_subject = subject or ext_meta.get("subject") or "Computer Science"
+        final_board = board or ext_meta.get("board") or "CMB"
+        final_unit = unit_title or ext_meta.get("unit") or "Data Representation"
+        final_tut = tutorial_num or ext_meta.get("tutorial") or "Tutorial 1"
+        final_curr = curriculum_title or ext_meta.get("curriculum") or "Cambridge IGCSE O/L"
+        
+        pdf_bytes, q_count = build_tutorial_pdf(
+            raw_text=ext_text,
+            subject=final_subject,
+            board=final_board,
+            unit_title=final_unit,
+            tutorial_num=final_tut,
+            curriculum_title=final_curr,
+            include_intro=include_intro,
+            include_teacher=include_teacher,
+            teacher_name=teacher_name,
+            teacher_qualifications=teacher_qualifications,
+            teacher_subject=teacher_subject,
+            teacher_message=teacher_message,
+            teacher_photo_path=teacher_photo_path,
+            custom_cover_path=custom_cover_path,
+            image_map=combined_img_map,
+            font_color_hex=font_color_hex,
+            watermark_opacity=watermark_opacity
+        )
+        return pdf_bytes, q_count
 
 
 def build_stamped_tutorial_pdf(
@@ -1457,21 +1800,11 @@ def build_stamped_tutorial_pdf(
     watermark_opacity=0.20
 ):
     """
-    Takes an existing past paper or science question PDF (with all diagrams, tables, and circuits),
-    generates the CAMDEX Cover, Intro, and Teacher Profile pages, and stamps the official
-    CAMDEX Double Border, Watermark Seal, and Vector Footer Strip onto every question page!
+    Backwards-compatible wrapper calling build_direct_raw_tutorial_pdf.
     """
-    dummy_text = f"""
-    Title: {curriculum_title}
-    Unit: {unit_title}
-    Tutorial: {tutorial_num}
-    
-    1. Sample
-    A. Option
-    """
-    
-    front_pdf_bytes, _ = build_tutorial_pdf(
-        raw_text=dummy_text,
+    return build_direct_raw_tutorial_pdf(
+        file_bytes=question_pdf_bytes,
+        filename="past_paper.pdf",
         subject=subject,
         board=board,
         unit_title=unit_title,
@@ -1488,97 +1821,4 @@ def build_stamped_tutorial_pdf(
         font_color_hex=font_color_hex,
         watermark_opacity=watermark_opacity
     )
-    
-    doc_front = fitz.open(stream=front_pdf_bytes, filetype="pdf")
-    cover_pages_count = 1 + (1 if include_intro else 0) + (1 if include_teacher else 0)
-    
-    doc_front_clean = fitz.open()
-    for i in range(cover_pages_count):
-        if i < len(doc_front):
-            doc_front_clean.insert_pdf(doc_front, from_page=i, to_page=i)
-            
-    doc_content = fitz.open(stream=question_pdf_bytes, filetype="pdf")
-    
-    buf_stamp = io.BytesIO()
-    stamp_canvas = canvas.Canvas(buf_stamp, pagesize=letter)
-    
-    stamp_canvas.setStrokeColor(COLOR_PRIMARY)
-    stamp_canvas.setLineWidth(0.7)
-    stamp_canvas.rect(24.0, 24.0, PAGE_WIDTH - 48.0, PAGE_HEIGHT - 48.0, stroke=1, fill=0)
-    stamp_canvas.rect(25.6, 25.6, PAGE_WIDTH - 51.2, PAGE_HEIGHT - 51.2, stroke=1, fill=0)
-    
-    watermark_img = os.path.join(DEFAULTS_DIR, "seal_watermark.png")
-    if not os.path.exists(watermark_img):
-        watermark_img = os.path.join(LOGOS_DIR, "Seal Logo Colored Version-02.png")
-    if os.path.exists(watermark_img):
-        stamp_canvas.setFillAlpha(watermark_opacity)
-        stamp_canvas.drawImage(
-            watermark_img,
-            (PAGE_WIDTH - 518.0) / 2.0,
-            (PAGE_HEIGHT - 518.0) / 2.0 - 15.0,
-            width=518.0,
-            height=518.0,
-            preserveAspectRatio=True,
-            mask='auto'
-        )
-    
-    stamp_canvas.setFillAlpha(1.0)
-    
-    stamp_canvas.setFillColor(COLOR_PRIMARY)
-    stamp_canvas.setStrokeColor(COLOR_PRIMARY)
-    font_name = "Helvetica-Bold"
-    font_size = 7.5
-    stamp_canvas.setFont(font_name, font_size)
-    phone_text = "+94 77 519 0334"
-    web_text = "camdexedu.com"
-    addr_text = "5 De S Jayasinghe Mawatha, Kohuwala, Nugegoda 10250"
-    
-    p_w = stamp_canvas.stringWidth(phone_text, font_name, font_size)
-    w_w = stamp_canvas.stringWidth(web_text, font_name, font_size)
-    a_w = stamp_canvas.stringWidth(addr_text, font_name, font_size)
-    
-    # Line 1: Phone + Web
-    y1 = 43.0
-    gap = 20.0
-    total_l1_w = 14.0 + p_w + gap + 14.0 + w_w
-    x1 = (PAGE_WIDTH - total_l1_w) / 2.0
-    
-    icon_phone = os.path.join(DEFAULTS_DIR, "icon_phone.png")
-    if os.path.exists(icon_phone):
-        stamp_canvas.drawImage(icon_phone, x1, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
-    else:
-        stamp_canvas.circle(x1 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
-    stamp_canvas.drawString(x1 + 13.5, y1, phone_text)
-    
-    x2 = x1 + 14.0 + p_w + gap
-    icon_globe = os.path.join(DEFAULTS_DIR, "icon_globe.png")
-    if os.path.exists(icon_globe):
-        stamp_canvas.drawImage(icon_globe, x2, y1 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
-    else:
-        stamp_canvas.circle(x2 + 5.0, y1 + 4.0, 5.0, stroke=0, fill=1)
-    stamp_canvas.drawString(x2 + 13.5, y1, web_text)
-    
-    # Line 2: Address
-    y2 = 30.0
-    total_l2_w = 14.0 + a_w
-    x3 = (PAGE_WIDTH - total_l2_w) / 2.0
-    icon_pin = os.path.join(DEFAULTS_DIR, "icon_pin.png")
-    if os.path.exists(icon_pin):
-        stamp_canvas.drawImage(icon_pin, x3, y2 - 1.0, width=10.0, height=10.0, preserveAspectRatio=True, mask='auto')
-    else:
-        stamp_canvas.circle(x3 + 5.0, y2 + 4.0, 5.0, stroke=0, fill=1)
-    stamp_canvas.drawString(x3 + 13.5, y2, addr_text)
-    
-    stamp_canvas.save()
-    stamp_pdf_bytes = buf_stamp.getvalue()
-    stamp_doc = fitz.open(stream=stamp_pdf_bytes, filetype="pdf")
-    
-    for page in doc_content:
-        page.show_pdf_page(page.rect, stamp_doc, 0, overlay=True)
-        
-    final_doc = fitz.open()
-    final_doc.insert_pdf(doc_front_clean)
-    final_doc.insert_pdf(doc_content)
-    
-    output_bytes = final_doc.tobytes()
-    return output_bytes, len(doc_content)
+

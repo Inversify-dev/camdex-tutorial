@@ -169,124 +169,6 @@ def save_teachers(teachers_data):
     except Exception:
         return False
 
-# ================= SAMPLE QUESTION PRESETS =================
-SAMPLE_MCQ_TEXT = """Edexcel IGCSE (2026/2027)
-Unit: Communication & the Internet
-Tutorial 5 – August/September/October
-
-MCQs
-
-1. What is a computer network?
-A. A single computer system in an office
-B. A group of computers connected to share resources
-C. A type of operating system software
-D. A high-level programming language
-
-2. Which of the following is an example of a LAN?
-A. The Internet
-B. Mobile phone network
-C. A satellite network
-D. A school computer lab
-
-3. Which network type covers the largest geographical area?
-A. LAN
-B. PAN
-C. WAN
-D. MAN
-
-4. What does PAN stand for?
-A. Public Area Network
-B. Personal Area Network
-C. Private Access Network
-D. Portable Area Network
-
-5. Which device connects different networks together?
-A. Router
-B. Hub
-C. Switch
-D. Modem
-"""
-
-SAMPLE_SCIENCE_TEXT = """Cambridge IGCSE O/L
-Unit: The Particulate Nature of Matter & Chemical Reactions
-Tutorial 1
-
-MCQs
-
-1. Which gas is produced when zinc powder reacts with dilute hydrochloric acid?
-A. Oxygen
-B. Hydrogen
-C. Carbon dioxide
-D. Chlorine
-
-Structured Questions:
-
-2. A student investigated the reaction of zinc powder with dilute hydrochloric acid using the apparatus below.
-
-[diagram: 1]
-Fig. 2.1: Gas Syringe and Reaction Flask Apparatus
-
-The same mass of zinc was added to different volumes of hydrochloric acid at room temperature, 20 °C. The total volume of hydrogen gas given off in each experiment was measured.
-
-(a) Use the gas syringe readings to record the volume of hydrogen in the table below:
-
-| Volume of acid / cm3 | Syringe reading / cm3 | Volume of hydrogen / cm3 |
-| 0 | 0 | 0 |
-| 5 | 14 | 14 |
-| 10 | 28 | 28 |
-| 15 | 42 | 42 |
-| 20 | 50 | 50 |
-[4]
-
-(b) State two variables that must be kept constant during this experiment.
-1. .................................................................................................................... [1]
-2. .................................................................................................................... [1]
-
-(c) Explain why the reaction rate decreases as the reaction progresses.
-........................................................................................................................
-........................................................................................................................ [2]
-
-[Total: 8]
-"""
-
-SAMPLE_PASSAGE_TEXT = """Edexcel IGCSE (2026/2027)
-Unit: Communication & Network Architecture
-Tutorial 5
-
-Structured Questions:
-
-41. Zafer and Robert work for a company that makes washing machines.
-a. Zafer writes user manuals for the washing machines. He stores these documents in the cloud. Zafer and the cloud storage provider share responsibility for data security. State one area of responsibility for each of them.
-
-Zafer
-........................................................................................................................
-........................................................................................................................
-
-Cloud storage provider
-........................................................................................................................
-........................................................................................................................
-
-42. A network uses TCP/IP. Figure below shows the TCP/IP protocol stack.
-
-[diagram: 1]
-Fig. 42.1: TCP/IP Protocol Layers
-
-a. One use of the application layer is to send and receive emails. State two email protocols.
-1. ....................................................................................................................
-2. ....................................................................................................................
-
-43. Some employees use company laptops in public places. The management is concerned that shoulder surfing could pose a risk to security.
-a. Describe what is meant by shoulder surfing.
-........................................................................................................................
-........................................................................................................................ [2]
-
-b. Explain one way to prevent shoulder surfing.
-........................................................................................................................
-........................................................................................................................ [2]
-
-[Total: 10]
-"""
-
 # Header Banner
 st.markdown(
     """
@@ -366,11 +248,6 @@ with st.sidebar:
         target_id = st.session_state.pop("pending_teacher_id")
         matched_t = next((t for t in teachers_data if t["id"] == target_id), teachers_data[0])
         st.session_state["active_teacher_id"] = matched_t["id"]
-        st.session_state["teacher_name_input"] = matched_t["name"]
-        st.session_state["teacher_subject_input"] = matched_t["subject"]
-        st.session_state["teacher_qual_input"] = matched_t["qualifications"]
-        st.session_state["teacher_msg_input"] = matched_t["message"]
-        st.session_state["teacher_photo_path_active"] = matched_t.get("photo", "")
         st.session_state["teacher_dropdown_selector"] = f"{matched_t['name']} ({matched_t['subject']})"
 
     if "active_teacher_id" not in st.session_state:
@@ -380,11 +257,6 @@ with st.sidebar:
                 def_t = t
                 break
         st.session_state["active_teacher_id"] = def_t["id"]
-        st.session_state["teacher_name_input"] = def_t["name"]
-        st.session_state["teacher_subject_input"] = def_t["subject"]
-        st.session_state["teacher_qual_input"] = def_t["qualifications"]
-        st.session_state["teacher_msg_input"] = def_t["message"]
-        st.session_state["teacher_photo_path_active"] = def_t.get("photo", "")
         st.session_state["teacher_dropdown_selector"] = f"{def_t['name']} ({def_t['subject']})"
 
     def on_teacher_select():
@@ -392,11 +264,6 @@ with st.sidebar:
         if chosen_label in teacher_map:
             t = teacher_map[chosen_label]
             st.session_state["active_teacher_id"] = t["id"]
-            st.session_state["teacher_name_input"] = t["name"]
-            st.session_state["teacher_subject_input"] = t["subject"]
-            st.session_state["teacher_qual_input"] = t["qualifications"]
-            st.session_state["teacher_msg_input"] = t["message"]
-            st.session_state["teacher_photo_path_active"] = t.get("photo", "")
 
     current_active_id = st.session_state.get("active_teacher_id", teachers_data[0]["id"])
     default_dropdown_label = id_to_label.get(current_active_id, teacher_display_list[0])
@@ -413,26 +280,105 @@ with st.sidebar:
         on_change=on_teacher_select
     )
 
-    teacher_name = st.text_input("Teacher Name", key="teacher_name_input", placeholder="e.g. MR. YUSUF SHIHAM")
-    teacher_subject = st.text_input("Subject Role / Title", key="teacher_subject_input", placeholder="e.g. COMPUTER SCIENCE TUTOR")
-    teacher_qual = st.text_input("Qualifications / Subheading", key="teacher_qual_input", placeholder="e.g. BSc (Hons) Biomedical Science")
-    teacher_msg = st.text_area("Teacher Bio / Description", key="teacher_msg_input", height=130, placeholder="Teacher bio description...")
-
-    active_photo = st.session_state.get("teacher_photo_path_active", "")
+    active_teacher = next((t for t in teachers_data if t["id"] == current_active_id), teachers_data[0])
+    teacher_name = active_teacher.get("name", "")
+    teacher_subject = active_teacher.get("subject", "")
+    teacher_qual = active_teacher.get("qualifications", "")
+    teacher_msg = active_teacher.get("message", "")
+    active_photo = active_teacher.get("photo", "")
     full_active_photo_path = os.path.join(pdf_generator.BASE_DIR, active_photo) if active_photo else ""
 
-    uploaded_teacher_photo = st.file_uploader("Upload Custom Teacher Photo for this PDF", type=["png", "jpg", "jpeg"])
-
-    if uploaded_teacher_photo:
-        st.caption("Using uploaded photo for current PDF:")
-        st.image(uploaded_teacher_photo, width=120)
-    elif full_active_photo_path and os.path.exists(full_active_photo_path):
-        st.caption(f"Preloaded photo for {teacher_name}:")
-        st.image(full_active_photo_path, width=120)
+    # Non-editable Teacher Profile Preview Card
+    if full_active_photo_path and os.path.exists(full_active_photo_path):
+        st.image(full_active_photo_path, width=110)
+    
+    clean_qual_display = teacher_qual.replace("**", "").replace("\n", " • ")
+    st.markdown(
+        f"""
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin-top: 6px; margin-bottom: 12px;">
+            <div style="font-weight: 700; font-size: 14.5px; color: #1A4199; margin-bottom: 2px;">{teacher_name}</div>
+            <div style="font-size: 11.5px; font-weight: 600; color: #64748b; margin-bottom: 6px;">{teacher_subject}</div>
+            <div style="font-size: 11.5px; color: #334155; margin-bottom: 6px;"><b>Qualifications:</b><br><span style="color: #475569;">{clean_qual_display}</span></div>
+            <div style="font-size: 11px; color: #64748b; line-height: 1.35; border-top: 1px dashed #e2e8f0; padding-top: 6px;"><b>Bio Summary:</b><br>{teacher_msg[:160] + ('...' if len(teacher_msg) > 160 else '')}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # Teacher Library Manager
-    with st.expander("Manage Teacher Library (Add / Edit / Remove)"):
-        tab_add, tab_update, tab_delete = st.tabs(["Add New Teacher", "Update Current", "Delete"])
+    with st.expander("Manage Teacher Library (Add / Edit / Delete)"):
+        tab_edit, tab_add, tab_delete = st.tabs(["Edit Teacher", "Add New Teacher", "Delete"])
+        
+        # ----------------- EDIT TEACHER TAB -----------------
+        with tab_edit:
+            st.markdown("##### Edit Teacher Details")
+            st.caption("Select a teacher below to update their qualifications, bio description, or photo.")
+            
+            edit_default_idx = dropdown_index
+            edit_teacher_sel = st.selectbox(
+                "Select Teacher to Edit",
+                options=teacher_display_list,
+                index=edit_default_idx,
+                key="edit_teacher_dropdown_sel"
+            )
+            
+            t_to_edit = teacher_map.get(edit_teacher_sel, active_teacher)
+            
+            st.markdown(
+                f"""
+                <div style="background: #f1f5f9; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 12.5px;">
+                    <b style="color: #1A4199;">Teacher:</b> {t_to_edit['name']}<br/>
+                    <b style="color: #64748b;">Subject Role:</b> {t_to_edit['subject']}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            edit_qual_val = st.text_input(
+                "Qualifications / Subheading",
+                value=t_to_edit.get("qualifications", ""),
+                key=f"edit_qual_{t_to_edit['id']}"
+            )
+            
+            edit_bio_val = st.text_area(
+                "Teacher Bio / Description",
+                value=t_to_edit.get("message", ""),
+                height=120,
+                key=f"edit_bio_{t_to_edit['id']}"
+            )
+            
+            current_t_photo = t_to_edit.get("photo", "")
+            current_t_photo_path = os.path.join(pdf_generator.BASE_DIR, current_t_photo) if current_t_photo else ""
+            if current_t_photo_path and os.path.exists(current_t_photo_path):
+                st.caption("Current Profile Photo:")
+                st.image(current_t_photo_path, width=90)
+            
+            replace_photo_file = st.file_uploader(
+                "Replace Profile Photo (Optional)",
+                type=["png", "jpg", "jpeg"],
+                key=f"replace_photo_{t_to_edit['id']}"
+            )
+            
+            if st.button("Save Changes to Library", type="primary", key="btn_save_teacher_edit", width="stretch"):
+                for t in teachers_data:
+                    if t["id"] == t_to_edit["id"]:
+                        t["qualifications"] = edit_qual_val.strip()
+                        t["message"] = edit_bio_val.strip()
+                        if replace_photo_file:
+                            photo_filename = f"{t['id']}.png"
+                            target_photo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "teachers", photo_filename)
+                            os.makedirs(os.path.dirname(target_photo_path), exist_ok=True)
+                            with open(target_photo_path, "wb") as f:
+                                f.write(replace_photo_file.getbuffer())
+                            t["photo"] = f"assets/teachers/{photo_filename}"
+                        break
+                
+                if save_teachers(teachers_data):
+                    st.session_state["pending_teacher_id"] = t_to_edit["id"]
+                    st.success(f"Successfully updated {t_to_edit['name']}!")
+                    st.rerun()
+
+        # ----------------- ADD NEW TEACHER TAB -----------------
         with tab_add:
             st.markdown("##### Add New Teacher to Permanent Library")
             new_t_name = st.text_input("Full Name", placeholder="e.g. DR. SARAH PERERA", key="new_t_name")
@@ -441,10 +387,16 @@ with st.sidebar:
             new_t_bio = st.text_area("Teacher Bio / Description", height=90, placeholder="Teacher description...", key="new_t_bio")
             new_t_photo = st.file_uploader("Upload Profile Photo", type=["png", "jpg", "jpeg"], key="new_t_photo")
             
-            if st.button("Save New Teacher to Library", type="primary", width="stretch"):
+            if st.button("Save New Teacher to Library", type="primary", width="stretch", key="btn_add_teacher"):
                 if new_t_name.strip():
                     norm_name = new_t_name.strip().upper()
-                    slug_id = re.sub(r'[^a-z0-9]', '', new_t_name.lower().replace("mr.", "").replace("ms.", "").replace("dr.", "").strip()) or f"teacher_{len(teachers_data) + 1}"
+                    base_slug = re.sub(r'[^a-z0-9]', '', new_t_name.lower().replace("mr.", "").replace("ms.", "").replace("dr.", "").strip()) or f"teacher_{len(teachers_data) + 1}"
+                    slug_id = base_slug
+                    counter = 1
+                    while any(t.get("id") == slug_id for t in teachers_data):
+                        counter += 1
+                        slug_id = f"{base_slug}_{counter}"
+                        
                     photo_rel_path = ""
                     if new_t_photo:
                         photo_filename = f"{slug_id}.png"
@@ -455,53 +407,38 @@ with st.sidebar:
                         photo_rel_path = f"assets/teachers/{photo_filename}"
                     
                     new_teacher_obj = {
-                        "id": slug_id, "name": norm_name, "subject": new_t_role.strip().upper() if new_t_role else "TUTOR",
-                        "qualifications": new_t_qual.strip(), "message": new_t_bio.strip(), "photo": photo_rel_path, "subjects_taught": []
+                        "id": slug_id,
+                        "name": norm_name,
+                        "subject": new_t_role.strip().upper() if new_t_role else "TUTOR",
+                        "qualifications": new_t_qual.strip(),
+                        "message": new_t_bio.strip(),
+                        "photo": photo_rel_path,
+                        "subjects_taught": []
                     }
                     teachers_data.append(new_teacher_obj)
                     if save_teachers(teachers_data):
                         st.session_state["pending_teacher_id"] = slug_id
                         st.success(f"Saved {norm_name} to library!")
                         st.rerun()
+                else:
+                    st.error("Please enter a teacher name.")
 
-        with tab_update:
-            st.markdown("##### Permanently Save Current Edits")
-            if st.button("Update This Teacher in Library", width="stretch"):
-                chosen_label = st.session_state.get("teacher_dropdown_selector")
-                if chosen_label in teacher_map:
-                    t_to_update = teacher_map[chosen_label]
-                    for t in teachers_data:
-                        if t["id"] == t_to_update["id"]:
-                            t["name"] = teacher_name
-                            t["subject"] = teacher_subject
-                            t["qualifications"] = teacher_qual
-                            t["message"] = teacher_msg
-                            if uploaded_teacher_photo:
-                                photo_filename = f"{t['id']}.png"
-                                target_photo_path = os.path.join(pdf_generator.BASE_DIR, "assets", "teachers", photo_filename)
-                                os.makedirs(os.path.dirname(target_photo_path), exist_ok=True)
-                                with open(target_photo_path, "wb") as f:
-                                    f.write(uploaded_teacher_photo.getbuffer())
-                                t["photo"] = f"assets/teachers/{photo_filename}"
-                            break
-                    if save_teachers(teachers_data):
-                        st.session_state["pending_teacher_id"] = t_to_update["id"]
-                        st.success(f"Updated {teacher_name}!")
-                        st.rerun()
-
+        # ----------------- DELETE TEACHER TAB -----------------
         with tab_delete:
             st.markdown("##### Delete Teacher from Library")
             teacher_to_del_label = st.selectbox("Select Teacher to Delete", options=teacher_display_list, key="del_teacher_sel")
             confirm_del = st.checkbox("I confirm deletion", key="confirm_del_chk")
-            if st.button("Delete Teacher", type="secondary", width="stretch"):
+            if st.button("Delete Teacher", type="secondary", width="stretch", key="btn_del_teacher"):
                 if confirm_del and len(teachers_data) > 1:
                     t_del = teacher_map.get(teacher_to_del_label)
                     if t_del:
                         remaining = [t for t in teachers_data if t["id"] != t_del["id"]]
                         if save_teachers(remaining):
                             st.session_state["pending_teacher_id"] = remaining[0]["id"]
-                            st.success("Deleted teacher!")
+                            st.success(f"Deleted {t_del['name']}!")
                             st.rerun()
+                elif not confirm_del:
+                    st.warning("Please check the confirmation box to delete.")
 
     st.markdown("---")
     st.markdown("### Document Layout")
@@ -511,13 +448,7 @@ with st.sidebar:
 
 # Resolve Teacher Photo Path
 final_teacher_photo_path = None
-if uploaded_teacher_photo:
-    temp_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    final_teacher_photo_path = os.path.join(temp_dir, f"uploaded_teacher_{uploaded_teacher_photo.name}")
-    with open(final_teacher_photo_path, "wb") as f:
-        f.write(uploaded_teacher_photo.getbuffer())
-elif full_active_photo_path and os.path.exists(full_active_photo_path):
+if full_active_photo_path and os.path.exists(full_active_photo_path):
     final_teacher_photo_path = full_active_photo_path
 
 temp_cover_path = None
@@ -532,204 +463,77 @@ if custom_cover_upload:
 main_col, preview_col = st.columns([1.1, 0.9])
 
 with main_col:
-    mode_tab1, mode_tab2 = st.tabs([
-        "Document Importer & Question Builder",
-        "Past Paper PDF Publisher"
-    ])
+    st.markdown("##### 1. Upload Raw Tutorial / Past Paper (.pdf, .docx, .txt)")
+    st.info("Upload your raw tutor document here. It will convert directly into the official CAMDEX Publication in **CAMDEX Deep Royal Blue (#1A4199)** with all diagrams, tables, and official covers & borders in place.")
     
-    # ---------------- TAB 1: DOCUMENT IMPORTER & BUILDER ----------------
-    with mode_tab1:
-        st.markdown("##### 1. Upload Raw Question Document (PDF / Word DOCX)")
-        
-        # Raw Document Uploader
-        uploaded_doc = st.file_uploader(
-            "Upload Tutor Question Document (.pdf, .docx, .txt)",
-            type=["pdf", "docx", "doc", "txt"],
-            key="raw_doc_file_uploader",
-            help="Upload the raw document created by the tutor. It will automatically extract all questions, tables, and diagrams into the editor container below!"
-        )
-        
-        temp_diagram_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp", "diagrams")
-        os.makedirs(temp_diagram_dir, exist_ok=True)
-        
-        # Handle automatic document extraction into the container
-        if uploaded_doc is not None:
-            doc_key = f"proc_{uploaded_doc.name}_{uploaded_doc.size}"
-            if st.session_state.get("last_processed_doc") != doc_key:
-                with st.spinner("Extracting text, questions, tables, and diagrams from document..."):
-                    ext_text, ext_meta, ext_img_map = pdf_generator.import_raw_document(
-                        uploaded_doc.getvalue(),
-                        uploaded_doc.name,
-                        temp_diagram_dir
-                    )
-                    st.session_state["questions_input"] = ext_text
-                    st.session_state["active_diagram_map"] = ext_img_map
-                    st.session_state["last_processed_doc"] = doc_key
-                    
-                    if ext_meta.get("board"):
-                        st.session_state["detected_board"] = ext_meta["board"]
-                    if ext_meta.get("subject"):
-                        st.session_state["detected_subject"] = ext_meta["subject"]
-                    if ext_meta.get("unit"):
-                        st.session_state["detected_unit"] = ext_meta["unit"]
-                    if ext_meta.get("tutorial"):
-                        st.session_state["detected_tutorial"] = ext_meta["tutorial"]
-                    if ext_meta.get("curriculum"):
-                        st.session_state["detected_curriculum"] = ext_meta["curriculum"]
-                st.success(f"Extracted all questions and {len(ext_img_map)} diagrams from **{uploaded_doc.name}** into the editor container below.")
-
-        st.markdown("---")
-        st.markdown("##### 2. Review & Edit in Container")
-        
-        # Preset Buttons
-        btn_c1, btn_c2, btn_c3, btn_c4 = st.columns(4)
-        with btn_c1:
-            if st.button("Sample MCQs", width="stretch"):
-                st.session_state["questions_input"] = SAMPLE_MCQ_TEXT
-        with btn_c2:
-            if st.button("Science & Tables", width="stretch"):
-                st.session_state["questions_input"] = SAMPLE_SCIENCE_TEXT
-        with btn_c3:
-            if st.button("Structured Passage", width="stretch"):
-                st.session_state["questions_input"] = SAMPLE_PASSAGE_TEXT
-        with btn_c4:
-            if st.button("Clear Input", width="stretch"):
-                st.session_state["questions_input"] = ""
-
-        current_input_val = st.session_state.get("questions_input", SAMPLE_PASSAGE_TEXT)
-
-        raw_text = st.text_area(
-            "Questions Container",
-            value=current_input_val,
-            height=340,
-            placeholder="Document questions and structured content will appear here...\n\nYou can edit or make any changes before generating.",
-            label_visibility="collapsed"
-        )
-
-        # Diagram & Image Manager
-        active_image_map = st.session_state.get("active_diagram_map", {})
-        
-        with st.expander(f"Attached Diagrams & Images ({len(active_image_map)} loaded)", expanded=(len(active_image_map) > 0)):
-            st.caption("Diagrams extracted from your uploaded document or manually uploaded. Reference them with `[diagram: 1]`, `[diagram: 2]`, or `[diagram: filename]`.")
+    direct_uploaded_file = st.file_uploader(
+        "Upload Raw Tutor Document",
+        type=["pdf", "docx", "doc", "txt"],
+        key="direct_raw_tute_uploader",
+        help="Transforms raw PDFs, Word documents, or worksheets into official CAMDEX Blue format."
+    )
+    
+    # Auto metadata extraction on upload
+    if direct_uploaded_file is not None:
+        f_key = f"direct_{direct_uploaded_file.name}_{direct_uploaded_file.size}"
+        if st.session_state.get("last_direct_doc") != f_key:
+            temp_diag_dir = os.path.join(pdf_generator.BASE_DIR, "assets", "temp", "diagrams")
+            with st.spinner("Analyzing document metadata and extracting structure..."):
+                _, detected_meta, _ = pdf_generator.import_raw_document(
+                    direct_uploaded_file.getvalue(),
+                    direct_uploaded_file.name,
+                    temp_diag_dir
+                )
+                st.session_state["last_direct_doc"] = f_key
+                if detected_meta.get("board"):
+                    st.session_state["detected_board"] = detected_meta["board"]
+                if detected_meta.get("subject"):
+                    st.session_state["detected_subject"] = detected_meta["subject"]
+                if detected_meta.get("unit"):
+                    st.session_state["detected_unit"] = detected_meta["unit"]
+                if detected_meta.get("tutorial"):
+                    st.session_state["detected_tutorial"] = detected_meta["tutorial"]
+                if detected_meta.get("curriculum"):
+                    st.session_state["detected_curriculum"] = detected_meta["curriculum"]
             
-            # Additional Diagram Uploads if needed
-            more_diagrams = st.file_uploader(
-                "Attach Additional Diagrams",
-                type=["png", "jpg", "jpeg"],
-                accept_multiple_files=True,
-                key="more_diagrams_uploader",
-                label_visibility="collapsed"
-            )
+            # Auto-trigger immediate generation on upload
+            st.session_state["auto_generate_direct"] = True
             
-            if more_diagrams:
-                for idx, df in enumerate(more_diagrams):
-                    d_path = os.path.join(temp_diagram_dir, f"manual_{df.name}")
-                    with open(d_path, "wb") as f:
-                        f.write(df.getbuffer())
-                    key_num = str(len(active_image_map) + 1)
-                    active_image_map[key_num] = d_path
-                    active_image_map[df.name] = d_path
-                    active_image_map[os.path.splitext(df.name)[0]] = d_path
-                st.session_state["active_diagram_map"] = active_image_map
-
-            if active_image_map:
-                # Show unique image files
-                unique_paths = list(set(active_image_map.values()))
-                d_cols = st.columns(min(len(unique_paths), 4) or 1)
-                for i, p in enumerate(unique_paths):
-                    if os.path.exists(p):
-                        with d_cols[i % 4]:
-                            st.image(p, width=100)
-                            matching_keys = [k for k, v in active_image_map.items() if v == p and k.isdigit()]
-                            k_label = matching_keys[0] if matching_keys else str(i+1)
-                            st.caption(f"Tag: `[diagram: {k_label}]`")
-
-        # Parsing Analysis & Stats
-        parsed_info = pdf_generator.parse_input_text(raw_text)
-        total_q = len(parsed_info["questions"])
-        mcq_count = sum(1 for q in parsed_info["questions"] if q["q_type"] == "mcq")
-        structured_count = total_q - mcq_count
-        diagrams_attached = len(set(active_image_map.values())) if active_image_map else 0
-
-        st.markdown(
-            f"""
-            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0;">
-                <div class="stat-card">
-                    <div class="stat-num">{total_q}</div>
-                    <div class="stat-label">Total Questions</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-num">{mcq_count}</div>
-                    <div class="stat-label">MCQs</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-num">{structured_count}</div>
-                    <div class="stat-label">Structured</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-num">{diagrams_attached}</div>
-                    <div class="stat-label">Diagrams</div>
-                </div>
+        st.success(f"Loaded: **{direct_uploaded_file.name}** ({direct_uploaded_file.size / 1024:.1f} KB)")
+    
+    st.markdown("---")
+    st.markdown("##### 2. Document Settings Summary")
+    
+    st.markdown(
+        f"""
+        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;">
+            <div style="font-size: 13px; font-weight: 700; color: #166534; margin-bottom: 4px;">DOCUMENT SPECIFICATIONS</div>
+            <div style="font-size: 13.5px; color: #1e293b;">
+                <b>Subject:</b> {selected_subject} ({board_code}) &nbsp;|&nbsp; 
+                <b>Topic:</b> {unit_title} &nbsp;|&nbsp; 
+                <b>Tutorial:</b> {tutorial_number}<br/>
+                <b>Curriculum:</b> {curriculum_title} &nbsp;|&nbsp;
+                <b>Teacher:</b> {teacher_name}
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    generate_direct_btn = st.button("Convert & Publish Document in CAMDEX Blue", type="primary", width="stretch")
 
-        generate_worksheet_btn = st.button("Generate High-Resolution Tutorial PDF (CAMDEX Blue)", type="primary", width="stretch")
+# Handle Direct Auto-Generation or Button Trigger
+should_run_direct = generate_direct_btn or (st.session_state.pop("auto_generate_direct", False) and direct_uploaded_file is not None)
 
-    # ---------------- TAB 2: PAST PAPER PDF PUBLISHER ----------------
-    with mode_tab2:
-        st.markdown("##### Direct Past Paper PDF Publisher")
-        st.info("Have a ready-made Past Paper PDF with full diagrams and formatting? Upload it here to stamp the official CAMDEX Cover, Tutor Profile, Double Borders, Watermark, and Scalable Footer!")
-        
-        uploaded_past_paper_pdf = st.file_uploader(
-            "Upload Existing Past Paper PDF",
-            type=["pdf"],
-            key="past_paper_pdf_uploader"
-        )
-        
-        if uploaded_past_paper_pdf:
-            st.success(f"Loaded Question Paper PDF: **{uploaded_past_paper_pdf.name}** ({uploaded_past_paper_pdf.size / 1024:.1f} KB)")
-        
-        generate_past_paper_btn = st.button("Stamp & Publish Past Paper PDF", type="primary", width="stretch")
-
-# Handle Generation Logic
-if generate_worksheet_btn:
-    try:
-        with st.spinner("Compiling high-resolution CAMDEX PDF..."):
-            pdf_bytes, q_count = pdf_generator.build_tutorial_pdf(
-                raw_text=raw_text,
-                subject=selected_subject,
-                board=board_code,
-                unit_title=unit_title,
-                tutorial_num=tutorial_number,
-                curriculum_title=curriculum_title,
-                include_intro=include_intro,
-                include_teacher=include_teacher,
-                teacher_name=teacher_name,
-                teacher_qualifications=teacher_qual,
-                teacher_subject=teacher_subject,
-                teacher_message=teacher_msg,
-                teacher_photo_path=final_teacher_photo_path,
-                custom_cover_path=temp_cover_path,
-                image_map=active_image_map,
-                font_color_hex="#1A4199",
-                watermark_opacity=0.22
-            )
-            st.session_state["generated_pdf"] = pdf_bytes
-            st.session_state["pdf_q_count"] = q_count
-            st.session_state["pdf_source_type"] = "Worksheet"
-    except Exception as e:
-        st.error(f"Generation error: {str(e)}")
-
-elif generate_past_paper_btn:
-    if not uploaded_past_paper_pdf:
-        st.error("Please upload a question paper PDF first.")
+if should_run_direct:
+    if direct_uploaded_file is None:
+        st.error("Please upload a raw tutorial document (PDF, Word DOCX, or TXT) first.")
     else:
         try:
-            with st.spinner("Stamping and publishing branded past paper PDF..."):
-                pdf_bytes, page_count = pdf_generator.build_stamped_tutorial_pdf(
-                    question_pdf_bytes=uploaded_past_paper_pdf.getvalue(),
+            with st.spinner("Converting raw document directly to official CAMDEX Blue publication..."):
+                pdf_bytes, page_count = pdf_generator.build_direct_raw_tutorial_pdf(
+                    file_bytes=direct_uploaded_file.getvalue(),
+                    filename=direct_uploaded_file.name,
                     subject=selected_subject,
                     board=board_code,
                     unit_title=unit_title,
@@ -743,14 +547,16 @@ elif generate_past_paper_btn:
                     teacher_message=teacher_msg,
                     teacher_photo_path=final_teacher_photo_path,
                     custom_cover_path=temp_cover_path,
+                    image_map=st.session_state.get("active_diagram_map", {}),
                     font_color_hex="#1A4199",
                     watermark_opacity=0.20
                 )
                 st.session_state["generated_pdf"] = pdf_bytes
                 st.session_state["pdf_q_count"] = page_count
-                st.session_state["pdf_source_type"] = "PastPaper"
+                st.session_state["pdf_source_type"] = "DirectRawTute"
+                st.session_state["preview_page_idx"] = 0
         except Exception as e:
-            st.error(f"Past paper stamping error: {str(e)}")
+            st.error(f"Direct conversion error: {str(e)}")
 
 def render_pdf_pages_to_images(pdf_bytes, scale=1.5):
     """Render PDF pages to PIL images for universal cross-device preview."""
@@ -777,18 +583,15 @@ with preview_col:
     
     if "generated_pdf" in st.session_state:
         pdf_bytes = st.session_state["generated_pdf"]
-        q_count = st.session_state.get("pdf_q_count", total_q)
-        source_type = st.session_state.get("pdf_source_type", "Worksheet")
+        q_count = st.session_state.get("pdf_q_count", 0)
+        source_type = st.session_state.get("pdf_source_type", "DirectRawTute")
         
         clean_tut = re.sub(r'[^a-zA-Z0-9]', '', str(tutorial_number or "1"))
         clean_subject = re.sub(r'[^a-zA-Z0-9]', '', str(selected_subject or "Subject"))
         clean_unit = re.sub(r'[^a-zA-Z0-9]', '', str(unit_title or "Topic"))
         filename = f"tute_{clean_tut}_{clean_subject}_{clean_unit}.pdf"
 
-        if source_type == "Worksheet":
-            st.success(f"Worksheet PDF created ({q_count} questions rendered in CAMDEX Blue)")
-        else:
-            st.success(f"Branded Past Paper PDF created ({q_count} content pages)")
+        st.success(f"CAMDEX PDF Publication created successfully ({q_count} pages)")
         
         st.download_button(
             label=f"Download {filename}",
@@ -836,7 +639,7 @@ with preview_col:
 
                 with col_nav1:
                     st.button(
-                        "◀ Previous",
+                        "Previous",
                         on_click=go_prev_page,
                         disabled=(cur_idx == 0),
                         width="stretch",
@@ -855,7 +658,7 @@ with preview_col:
 
                 with col_nav3:
                     st.button(
-                        "Next ▶",
+                        "Next",
                         on_click=go_next_page,
                         disabled=(cur_idx >= total_pages - 1),
                         width="stretch",
@@ -887,7 +690,7 @@ with preview_col:
                     if idx < total_pages - 1:
                         st.markdown("<hr style='margin: 20px 0; border: none; border-top: 1px dashed #cbd5e1;'/>", unsafe_allow_html=True)
     else:
-        st.info("Upload a document above or click **'Generate High-Resolution Tutorial PDF'** to build your formatted tutorial PDF.")
+        st.info("Upload a document above or click 'Convert & Publish Document' to build your formatted tutorial PDF.")
         
         st.markdown(
             f"""
@@ -898,10 +701,10 @@ with preview_col:
                     Unit: <b>{unit_title}</b> • {tutorial_number}
                 </div>
                 <div>
-                    <span class="feature-tag">✨ MCQs</span>
-                    <span class="feature-tag">📐 Diagrams</span>
-                    <span class="feature-tag">📊 Tables</span>
-                    <span class="feature-tag">📑 Structured</span>
+                    <span class="feature-tag">MCQs</span>
+                    <span class="feature-tag">Diagrams</span>
+                    <span class="feature-tag">Tables</span>
+                    <span class="feature-tag">Structured Questions</span>
                 </div>
             </div>
             """,
