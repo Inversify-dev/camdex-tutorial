@@ -173,7 +173,7 @@ st.markdown(
     <div class="camdex-header">
         <div>
             <div class="camdex-title">CAMDEX Tutorial PDF Generator</div>
-            <div class="camdex-subtitle">Upload Raw Tutor Document (.pdf / .docx), Edit in Container & Publish in Official CAMDEX </div>
+            <div class="camdex-subtitle">Upload Raw Tutor Document (.pdf / .docx), Edit in Container & Publish in Official CAMDEX Publication</div>
         </div>
     </div>
     """,
