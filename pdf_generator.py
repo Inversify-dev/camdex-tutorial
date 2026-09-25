@@ -1729,14 +1729,52 @@ def build_direct_raw_tutorial_pdf(
         stamp_canv.save()
         base_stamp_doc = fitz.open(stream=buf_stamp.getvalue(), filetype="pdf")
         
-        for q_idx in range(start_page, len(doc_src)):
+        # Determine global content boundaries across question pages to eliminate dead outer margins/padding
+        global_min_x0 = 9999.0
+        global_min_y0 = 9999.0
+        global_max_x1 = 0.0
+        global_max_y1 = 0.0
+        
+        for pno in range(start_page, end_page):
+            sp = doc_src[pno]
+            for b in sp.get_text("blocks"):
+                if b[4].strip():
+                    global_min_x0 = min(global_min_x0, b[0])
+                    global_min_y0 = min(global_min_y0, b[1])
+                    global_max_x1 = max(global_max_x1, b[2])
+                    global_max_y1 = max(global_max_y1, b[3])
+            for d in sp.get_drawings():
+                dr = d.get("rect")
+                if dr and not dr.is_empty and not dr.is_infinite:
+                    global_min_x0 = min(global_min_x0, dr.x0)
+                    global_min_y0 = min(global_min_y0, dr.y0)
+                    global_max_x1 = max(global_max_x1, dr.x1)
+                    global_max_y1 = max(global_max_y1, dr.y1)
+
+        ref_p = doc_src[start_page]
+        src_w = ref_p.rect.width
+        src_h = ref_p.rect.height
+
+        if global_min_x0 < 9000 and global_min_y0 < 9000:
+            clip_x0 = max(0.0, global_min_x0 - 2.0)
+            clip_y0 = max(0.0, global_min_y0 - 2.0)
+            clip_x1 = min(src_w, global_max_x1 + 2.0)
+            clip_y1 = min(src_h, global_max_y1 + 2.0)
+        else:
+            clip_x0 = 0.0
+            clip_y0 = 0.0
+            clip_x1 = src_w
+            clip_y1 = src_h
+
+        clip_rect = fitz.Rect(clip_x0, clip_y0, clip_x1, clip_y1)
+
+        # Target printable area extending border-to-border inside the double blue border
+        target_box = fitz.Rect(27.0, 27.0, PAGE_WIDTH - 27.0, PAGE_HEIGHT - 54.0)
+
+        for q_idx in range(start_page, end_page):
             # Create standard Letter page (612 x 792)
             target_p = doc_questions_clean.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
-            
-            # 1. Place question content from source into clean, fully centered safe printable box
-            # Top: 36pt (inside double border at 25.6pt), Bottom: 54pt (above footer), Sides: 36pt
-            target_box = fitz.Rect(36.0, 36.0, PAGE_WIDTH - 36.0, PAGE_HEIGHT - 54.0)
-            target_p.show_pdf_page(target_box, doc_src, q_idx)
+            target_p.show_pdf_page(target_box, doc_src, q_idx, clip=clip_rect)
             
             # 2. Overlay Base Stamp (Double Blue Border, Centered Watermark, Contact Footer Strip)
             target_p.show_pdf_page(target_p.rect, base_stamp_doc, 0, overlay=True)
