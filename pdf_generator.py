@@ -39,23 +39,16 @@ class DottedAnswerLine(Flowable):
     """
     Draws a uniform, dark CAMDEX Deep Royal Blue vector dotted answer line
     from left_indent extending fully to the right content margin (availWidth).
-    Optionally draws:
-      - prefix (e.g. 'd = ', '1.', '(a)', 'Ans:')
-      - unit suffix (e.g. 'cm', 'g', 'kg', 's', 'V', 'A', 'N', '°C', '%')
-      - right-aligned mark brackets (e.g. '[1]', '[2]', '[Total: 10]').
+    Optionally draws right-aligned mark brackets (e.g. '[1]', '[2]', '[Total: 10]').
     """
-    def __init__(self, prefix="", unit="", left_indent=24.0, height=16.5, color=None, mark=None, mark_font="Times-Bold", mark_size=10.5, font_name="Times-Roman", font_size=10.5):
+    def __init__(self, left_indent=24.0, height=16.5, color=None, mark=None, mark_font="Times-Bold", mark_size=10.5):
         super().__init__()
-        self.prefix = str(prefix).strip() if prefix else ""
-        self.unit = str(unit).strip() if unit else ""
         self.left_indent = float(left_indent)
         self.height = float(height)
         self.color = color or colors.HexColor("#1A4199")
         self.mark = mark
         self.mark_font = mark_font
         self.mark_size = float(mark_size)
-        self.font_name = font_name
-        self.font_size = float(font_size)
 
     def wrap(self, availWidth, availHeight):
         self.width = availWidth
@@ -69,15 +62,6 @@ class DottedAnswerLine(Flowable):
         x_start = self.left_indent
         x_end = self.width
         
-        # 1. Draw Prefix (if present, e.g. "d =", "M =", "(a)", "1.")
-        if self.prefix:
-            c.setFont(self.font_name, self.font_size)
-            c.setFillColor(self.color)
-            c.drawString(self.left_indent, y - 2.0, self.prefix)
-            pref_w = c.stringWidth(self.prefix, self.font_name, self.font_size)
-            x_start = self.left_indent + pref_w + 6.0
-            
-        # 2. Draw Right-Aligned Mark (e.g. "[1]", "[2]", "[Total: 10]")
         if self.mark:
             c.setFont(self.mark_font, self.mark_size)
             c.setFillColor(self.color)
@@ -86,16 +70,6 @@ class DottedAnswerLine(Flowable):
             c.drawString(self.width - mark_w, y - 2.0, mark_text)
             x_end = self.width - mark_w - 8.0
             
-        # 3. Draw Unit Suffix (if present, e.g. "cm", "g", "V", "N")
-        if self.unit:
-            c.setFont(self.font_name, self.font_size)
-            c.setFillColor(self.color)
-            unit_w = c.stringWidth(self.unit, self.font_name, self.font_size)
-            unit_x = x_end - unit_w
-            c.drawString(unit_x, y - 2.0, self.unit)
-            x_end = unit_x - 6.0
-            
-        # 4. Draw Crisp Vector Dotted Line in CAMDEX Blue
         if x_end > x_start:
             c.setStrokeColor(self.color)
             c.setLineWidth(0.85)
@@ -105,154 +79,52 @@ class DottedAnswerLine(Flowable):
         c.restoreState()
 
 
-class NumberedDottedAnswerLine(DottedAnswerLine):
+class NumberedDottedAnswerLine(Flowable):
     """
-    Backwards-compatible wrapper for numbered dotted answer lines.
+    Draws a number label (e.g., '1.', '2.', '(a)') followed by the dark vector dotted rule
+    reaching the right margin, with optional right-aligned mark.
     """
     def __init__(self, num_str="1.", left_indent=24.0, height=16.5, color=None, mark=None, mark_font="Times-Bold", mark_size=10.5):
-        super().__init__(prefix=num_str, left_indent=left_indent, height=height, color=color, mark=mark, mark_font=mark_font, mark_size=mark_size)
+        super().__init__()
+        self.num_str = str(num_str).strip()
+        self.left_indent = float(left_indent)
+        self.height = float(height)
+        self.color = color or colors.HexColor("#1A4199")
+        self.mark = mark
+        self.mark_font = mark_font
+        self.mark_size = float(mark_size)
 
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        return availWidth, self.height
 
-def parse_dotted_line_details(text):
-    """
-    Parses complex dotted lines like:
-      - 'd = ................................................... cm [1]'
-      - '................................................... [2]'
-      - 'M = .... g [1]'
-      - '1. ................................. [1]'
-      - '(a) ................................. [2]'
-    Returns (prefix, unit, mark).
-    """
-    if not text:
-        return "", "", None
+    def draw(self):
+        c = self.canv
+        c.saveState()
         
-    m_mark = re.search(r'(\[(?:\d+|Total:\s*\d+)\]|\(\d+\s*marks?\))\s*$', text, re.IGNORECASE)
-    mark = m_mark.group(1) if m_mark else None
-    core = text[:m_mark.start()].strip() if m_mark else text.strip()
-    
-    # Check for unit at the end of core (e.g. 'cm', 'g', 'kg', 'm/s', 's', 'V', 'A', 'J', 'N', '°C', '%')
-    m_unit = re.search(r'[\._\s\-]+([a-zA-Z°%/\^0-9]+)\s*$', core)
-    unit = None
-    if m_unit:
-        u_cand = m_unit.group(1).strip()
-        if len(u_cand) <= 10 and u_cand.lower() not in ('the', 'and', 'with', 'for', 'is', 'are', 'that', 'this', 'from', 'then'):
-            unit = u_cand
-            core = core[:m_unit.start()].strip()
+        y = 4.0
+        c.setFont(self.mark_font, self.mark_size)
+        c.setFillColor(self.color)
+        
+        c.drawString(self.left_indent, y - 2.0, self.num_str)
+        num_w = c.stringWidth(self.num_str, self.mark_font, self.mark_size)
+        
+        x_start = self.left_indent + num_w + 6.0
+        x_end = self.width
+        
+        if self.mark:
+            mark_text = str(self.mark).strip()
+            mark_w = c.stringWidth(mark_text, self.mark_font, self.mark_size)
+            c.drawString(self.width - mark_w, y - 2.0, mark_text)
+            x_end = self.width - mark_w - 8.0
             
-    # Check for prefix before dots
-    m_dots = re.search(r'[\._\-]{3,}', core)
-    prefix = core[:m_dots.start()].strip() if m_dots else ''
-    
-    return prefix, unit, mark
-
-
-def strip_3rd_party_branding(text):
-    """
-    Removes unwanted headers, footers, watermarks, URLs, and past paper tracking
-    from PhysicsAndMathsTutor, Save My Exams, and generic raw paper scans.
-    """
-    if not text:
-        return ""
-    lines = text.splitlines()
-    clean_lines = []
-    
-    skip_patterns = [
-        r'physicsandmathstutor(?:\.com)?',
-        r'physics\s*(?:and|&)\s*maths\s*tutor',
-        r'pmt\.education',
-        r'save\s*my\s*exams',
-        r'savemyexams(?:\.co\.uk|\.com)?',
-        r'head\s+to\s+savemyexams',
-        r'for\s+more\s+awesome\s+.*resources',
-        r'get\s+more\s+and\s+ace\s+your\s+exams',
-        r'scan\s+here\s+to\s+return\s+to\s+the\s+course',
-        r'©\s*\d{4}\s*save\s*my\s*exams',
-        r'paper\s+1\s+and\s+2\s+question\s+paper',
-        r'topic\s+based\s+papers\.?\s+source:\s*online',
-        r'topic\s+based\s+papers',
-        r'page\s+\d+\s+of\s+\d+',
-        r'page\s+\d+\s*$',
-        r'^\s*0625\/\d+\/[A-Z]\/[A-Z]\/\d+',
-        r'^\s*9701\/\d+\/[A-Z]\/[A-Z]\/\d+',
-        r'^\s*0478\/\d+\/[A-Z]\/[A-Z]\/\d+',
-        r'^\s*4CP0\/\d+\/[A-Z]\/[A-Z]\/\d+',
-        r'questions\s+are\s+applicable\s+for\s+both\s+core\s+and\s+extended',
-        r'rumesh\s+vishwanatha',
-        r'^\s*\d{10}\s*$',
-        r'\b\d+\s+mins\b',
-        r'\b\d+\s+questions\b',
-        r'easy\s*\(\d+',
-        r'medium\s*\(\d+',
-        r'hard\s*\(\d+',
-        r'^\s*easy\s+questions\s*$',
-        r'^\s*medium\s+questions\s*$',
-        r'^\s*hard\s+questions\s*$',
-        r'total\s+marks(?:\s*\/\s*\d+)?',
-        r'^\s*\d+\.\d+\s+[A-Za-z]',
-        r'the\s+factors\s*&',
-        r'changes\s+to\s+the\s+factors',
-        r'mark\s*scheme',
-        r'model\s*answers',
-        r'topic\s*questions',
-    ]
-    
-    for l in lines:
-        l_trim = l.strip()
-        if not l_trim:
-            clean_lines.append("")
-            continue
-        low = l_trim.lower()
-        if any(re.search(pat, low) for pat in skip_patterns):
-            continue
-        clean_lines.append(l)
-        
-    return "\n".join(clean_lines)
-
-
-def is_3rd_party_cover_page(doc, p_idx):
-    """
-    Identifies 3rd-party cover sheets (Save My Exams, Physics & Maths Tutor / PMT,
-    generic online repository sheets, exam instruction sheets) that should not appear
-    in generated CAMDEX publications.
-    """
-    if p_idx >= len(doc) or p_idx > 1:
-        return False
-
-    page = doc[p_idx]
-    txt = page.get_text('text').strip()
-    low = txt.lower()
-    non_empty = [l.strip() for l in txt.splitlines() if l.strip()]
-    num_images = len(page.get_images())
-    
-    # 0. Completely blank separator page
-    if len(non_empty) == 0 and num_images == 0 and len(page.get_drawings()) == 0:
-        return True
-
-    # 1. Save My Exams Cover / Score Tracker (e.g. econ.pdf)
-    if 'savemyexams' in low or 'save my exams' in low:
-        if any(term in low for term in ['easy (', 'medium (', 'hard (', 'total marks', 'score tracker', 'scan here to return', 'model answers', '16 mins', 'mins', 'questions\npaper', 'question\npaper']):
-            return True
-        if num_images <= 1 and not re.search(r'\[(?:\d+|total:\s*\d+)\]|\(\d+\s*marks?\)', low) and not re.search(r'^[A-D][\.\)]\s+', txt, re.MULTILINE):
-            return True
-
-    # 2. Physics & Maths Tutor (PMT) Cover (e.g. 1.pdf)
-    if 'physicsandmathstutor' in low or 'physics and maths tutor' in low or 'pmt.education' in low:
-        if any(term in low for term in ['question paper', 'model answers', 'mark scheme', 'paper 1 and 2', 'topic questions']):
-            if num_images <= 1 and not re.search(r'\[(?:\d+|total:\s*\d+)\]|\(\d+\s*marks?\)', low):
-                return True
-        if p_idx == 0 and len(non_empty) <= 8 and num_images <= 1:
-            return True
-
-    # 3. Topic Based Papers / Generic Online Repository Cover (e.g. Forces.pdf)
-    if ('topic based papers' in low or 'source: online' in low) and len(non_empty) <= 10 and num_images <= 1:
-        return True
-
-    # 4. Standard Cambridge / Edexcel Assessment Cover Sheet
-    if p_idx == 0 and any(term in low for term in ['read these instructions first', 'write your centre number, candidate number', 'candidates answer on the question paper']):
-        if not re.search(r'\[(?:\d+|total:\s*\d+)\]', low):
-            return True
-
-    return False
+        if x_end > x_start:
+            c.setStrokeColor(self.color)
+            c.setLineWidth(0.85)
+            c.setDash([1.2, 3.0])
+            c.line(x_start, y, x_end, y)
+            
+        c.restoreState()
 
 
 # Base directories
@@ -403,62 +275,15 @@ def clean_xml_text(text):
 
 def format_marks_in_text(text):
     """
-    Detects trailing or inlined marks like [1], [2], (1 mark), (1 mark) (1 mark), [Total: 10].
-    Deduplicates piled up marks, cleans the base text, and normalizes the mark to [1], [2], [Total: 10].
+    Detects trailing marks like [1], [2], [Total: 10] or (2 marks).
+    Returns (cleaned_text, mark_html or None).
     """
-    if not text:
-        return "", None
-    
-    # Deduplicate any piled-up marks: e.g. (1 mark) (1 mark) -> (1 mark)
-    text = re.sub(r'(\(\d+\s*marks?\)|\[(?:\d+|Total:\s*\d+)\])(?:\s*[\(\[]?\d*\s*marks?[\)\]]?)+', r'\1', text, flags=re.IGNORECASE)
-    
     m = re.search(r'(\[(?:\d+|Total:\s*\d+)\]|\(\d+\s*marks?\))\s*$', text, re.IGNORECASE)
     if m:
-        raw_mark = m.group(1).strip()
+        mark_str = m.group(1)
         base_text = text[:m.start()].strip()
-        dm = re.search(r'\d+', raw_mark)
-        if "total" in raw_mark.lower():
-            norm_mark = f"[Total: {dm.group(0)}]" if dm else raw_mark
-        else:
-            norm_mark = f"[{dm.group(0)}]" if dm else raw_mark
-        return base_text, norm_mark
+        return base_text, mark_str
     return text, None
-
-
-def unpack_table_df(df):
-    """
-    Unpacks PyMuPDF table rows where multi-line cells (e.g. 'A\\nB\\nC\\nD')
-    were extracted in a single row without horizontal grid lines.
-    """
-    clean_rows = []
-    for r in df:
-        if not r:
-            continue
-        raw_cells = [str(c or '').strip() for c in r]
-        if not any(raw_cells):
-            continue
-            
-        cell_splits = [[line.strip() for line in c.splitlines() if line.strip()] for c in raw_cells]
-        max_sub = max((len(s) for s in cell_splits), default=1)
-        
-        if max_sub > 1 and len(cell_splits) >= 2:
-            for line_idx in range(max_sub):
-                unpacked_cells = []
-                for s in cell_splits:
-                    val = s[line_idx] if line_idx < len(s) else ""
-                    unpacked_cells.append(val)
-                if any(unpacked_cells):
-                    if unpacked_cells and not unpacked_cells[0] and len(unpacked_cells) > 1:
-                        unpacked_cells = unpacked_cells[1:]
-                    clean_rows.append(unpacked_cells)
-        else:
-            single_row = [c.replace('\n', ' ').strip() for c in raw_cells]
-            if any(single_row):
-                if single_row and not single_row[0] and len(single_row) > 1:
-                    single_row = single_row[1:]
-                clean_rows.append(single_row)
-    return clean_rows
-
 
 def parse_markdown_table(table_lines):
     """Parses a markdown or pipe-delimited table into a list of row lists."""
@@ -485,12 +310,9 @@ def parse_input_text(raw_text):
     reading comprehension passages, tables, diagrams, and marks.
     Preserves all paragraphs and merges hard-wrapped lines cleanly.
     """
-    clean_raw = strip_3rd_party_branding(raw_text)
-    lines = clean_raw.splitlines()
+    lines = raw_text.splitlines()
     blocks = []
     current_q = None
-    pending_q_num = None
-    pending_opt_letter = None
     current_sec = "MCQs"
     
     table_buffer = []
@@ -523,7 +345,7 @@ def parse_input_text(raw_text):
 
         low = line.lower()
 
-        # Metadata detection (rejecting lines contaminated with 3rd-party score / time trackers)
+        # Metadata detection
         if low.startswith("title:"):
             meta_title = line.split(":", 1)[1].strip()
             continue
@@ -534,8 +356,7 @@ def parse_input_text(raw_text):
             meta_tutorial = line.split(":", 1)[1].strip()
             continue
         if low.startswith("cambridge igcse") or low.startswith("edexcel igcse") or low.startswith("cambridge o/l") or low.startswith("cambridge a/l"):
-            if not any(term in low for term in ["mins", "questions", "easy", "medium", "hard", "total marks", "score", "savemyexams"]):
-                meta_title = meta_title or line
+            meta_title = meta_title or line
             continue
         if (low.startswith("unit ") or low.startswith("unit:")) and not meta_unit:
             meta_unit = line.split(":", 1)[-1].strip()
@@ -566,23 +387,13 @@ def parse_input_text(raw_text):
                 blocks.append({"type": "image", "ref": img_ref, "caption": caption})
             continue
 
-        # Check for standalone question number line (e.g. "1\n\nQuestion stem...")
-        if line.isdigit() and 0 < int(line) < 500:
-            pending_q_num = int(line)
-            continue
-
         # Check for Question Start (e.g. "1. What is..." or "41. Zafer and Robert...")
         # Guard against IP addresses (e.g. 192.169.0.3) and decimals (e.g. 3.14)
         is_question_start = False
         q_num = None
         q_text = ""
 
-        if pending_q_num is not None:
-            is_question_start = True
-            q_num = pending_q_num
-            q_text = line
-            pending_q_num = None
-        elif not re.match(r'^\d+\.\d+', line):
+        if not re.match(r'^\d+\.\d+', line):
             qm = re.match(r"^(?:(?:Q|Question)\s*)?(\d+)[\.\)]\s*(.*)$", line, re.IGNORECASE)
             qm2 = None
             if not qm and re.match(r"^(\d+)\s+([A-Z].*)$", line) and len(line) > 15:
@@ -604,7 +415,6 @@ def parse_input_text(raw_text):
                 q_text = qm2.group(2).strip()
 
         if is_question_start:
-            pending_opt_letter = None
             current_q = {
                 "type": "question",
                 "q_type": "mcq" if current_sec == "MCQs" else "structured",
@@ -617,25 +427,11 @@ def parse_input_text(raw_text):
             blocks.append(current_q)
             continue
 
-        # Check for standalone option letter (e.g. "A." or "A" or "A:")
-        standalone_opt = re.match(r"^\(?([A-D])[\.\:\)]\s*$", line)
-        if standalone_opt and current_q and current_q["q_type"] == "mcq":
-            pending_opt_letter = standalone_opt.group(1).upper()
-            continue
-
-        # If we have a pending option letter waiting for its text
-        if pending_opt_letter and current_q and current_q["q_type"] == "mcq":
-            clean_opt_text = re.sub(r'[\(\[\{]\s*\d+\s*marks?\s*[\)\]\}]', '', line, flags=re.I).strip()
-            current_q["options"].append((pending_opt_letter, clean_opt_text))
-            pending_opt_letter = None
-            continue
-
-        # Check for MCQ Option with text (e.g. "A. Option" or "B) Option")
+        # Check for MCQ Option (e.g. "A. Option" or "B) Option")
         om = re.match(r"^\(?([A-D])[\.\)]\s+(.*)$", line)
         if om and current_q and current_q["q_type"] == "mcq":
             opt_letter = om.group(1).upper()
             opt_text = om.group(2).strip()
-            opt_text = re.sub(r'[\(\[\{]\s*\d+\s*marks?\s*[\)\]\}]', '', opt_text, flags=re.I).strip()
             current_q["options"].append((opt_letter, opt_text))
             continue
 
@@ -691,8 +487,7 @@ def parse_input_text(raw_text):
             # General text handling (continuation vs new paragraph)
             if len(current_q["elements"]) == 0:
                 if current_q["q_type"] == "mcq" and len(current_q["options"]) > 0:
-                    clean_line = re.sub(r'[\(\[\{]\s*\d+\s*marks?\s*[\)\]\}]', '', line, flags=re.I).strip()
-                    current_q["options"][-1] = (current_q["options"][-1][0], current_q["options"][-1][1] + " " + clean_line)
+                    current_q["options"][-1] = (current_q["options"][-1][0], current_q["options"][-1][1] + " " + line)
                 else:
                     # Multi-line Question Prompt stem -> append cleanly so entire stem is bold!
                     current_q["text"] += " " + line
@@ -707,9 +502,7 @@ def parse_input_text(raw_text):
         else:
             if re.match(r"^(?:Text|Source|Passage|Case Study)\s+[A-Z0-9]:", line, re.IGNORECASE):
                 blocks.append({"type": "passage_header", "text": line})
-            elif any(low.startswith(pfx) for pfx in ("instruction", "read the following", "answer all", "you must", "candidates", "note:", "section")):
-                blocks.append({"type": "instruction", "text": line})
-            elif len(line) > 50 and not any(term in low for term in ["mins", "questions", "easy", "medium", "hard", "total marks", "score"]):
+            else:
                 blocks.append({"type": "instruction", "text": line})
 
     flush_table()
@@ -717,20 +510,6 @@ def parse_input_text(raw_text):
     questions_list = [b for b in blocks if b.get("type") == "question"]
     for idx, q in enumerate(questions_list, 1):
         q["display_number"] = idx
-        
-        # Split any inlined MCQ options from question text if options were not parsed separately
-        if q["q_type"] == "mcq" and not q.get("options"):
-            inlined_parts = re.split(r'\s+(?=[A-D][\.\)]\s+)', q["text"])
-            if len(inlined_parts) >= 4 and any(inlined_parts[1].startswith(pfx) for pfx in ('A.', 'A)', 'A ')):
-                q["text"] = inlined_parts[0].strip()
-                parsed_opts = []
-                for p in inlined_parts[1:]:
-                    om = re.match(r'^([A-D])[\.\)]\s+(.*)$', p.strip())
-                    if om:
-                        clean_opt_t = re.sub(r'[\(\[\{]\s*\d+\s*marks?\s*[\)\]\}]', '', om.group(2), flags=re.I).strip()
-                        parsed_opts.append((om.group(1), clean_opt_t))
-                if parsed_opts:
-                    q["options"] = parsed_opts
 
     return {
         "title": meta_title,
@@ -739,88 +518,6 @@ def parse_input_text(raw_text):
         "blocks": blocks,
         "questions": questions_list
     }
-
-
-def build_docx_numbering_map(doc):
-    """
-    Parses Word document's numbering.xml to accurately extract list formats (decimal, lowerLetter (a), lowerRoman (i), etc.).
-    """
-    num_map = {}
-    if not hasattr(doc.part, 'numbering_part') or doc.part.numbering_part is None:
-        return num_map
-    
-    try:
-        import xml.etree.ElementTree as ET
-        root = ET.fromstring(doc.part.numbering_part.element.xml)
-        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-        
-        abstracts = {}
-        for absNum in root.findall('w:abstractNum', ns):
-            absId = absNum.get(f"{{{ns['w']}}}abstractNumId")
-            abstracts[absId] = {}
-            for lvl in absNum.findall('w:lvl', ns):
-                ilvl = lvl.get(f"{{{ns['w']}}}ilvl")
-                numFmt_el = lvl.find('w:numFmt', ns)
-                lvlText_el = lvl.find('w:lvlText', ns)
-                numFmt = numFmt_el.get(f"{{{ns['w']}}}val") if numFmt_el is not None else 'decimal'
-                lvlText = lvlText_el.get(f"{{{ns['w']}}}val") if lvlText_el is not None else '%1.'
-                abstracts[absId][ilvl] = (numFmt, lvlText)
-                
-        for num_el in root.findall('w:num', ns):
-            numId = num_el.get(f"{{{ns['w']}}}numId")
-            absRef = num_el.find('w:abstractNumId', ns)
-            if absRef is not None:
-                absId = absRef.get(f"{{{ns['w']}}}val")
-                if absId in abstracts:
-                    num_map[numId] = abstracts[absId]
-    except Exception:
-        pass
-        
-    return num_map
-
-
-def format_docx_num(num_map, counters, numId, ilvl_str):
-    """
-    Computes exact list label prefix (e.g. '1. ', '(a) ', '(i) ', '• ') matching Word numbering definitions.
-    """
-    ilvl = int(ilvl_str)
-    if numId not in counters:
-        counters[numId] = {}
-    if ilvl not in counters[numId]:
-        counters[numId][ilvl] = 0
-        
-    for h in list(counters[numId].keys()):
-        if h > ilvl:
-            counters[numId][h] = 0
-            
-    counters[numId][ilvl] += 1
-    idx = counters[numId][ilvl]
-    
-    numFmt = 'decimal'
-    lvlText = '%1.'
-    if numId in num_map and ilvl_str in num_map[numId]:
-        numFmt, lvlText = num_map[numId][ilvl_str]
-        
-    if numFmt == 'lowerLetter':
-        letters = 'abcdefghijklmnopqrstuvwxyz'
-        val = letters[(idx - 1) % 26] if idx <= 26 else str(idx)
-    elif numFmt == 'upperLetter':
-        letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-        val = letters[(idx - 1) % 26] if idx <= 26 else str(idx)
-    elif numFmt == 'lowerRoman':
-        romans = ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x', 'xi', 'xii', 'xiii', 'xiv', 'xv']
-        val = romans[(idx - 1) % len(romans)] if idx <= len(romans) else str(idx)
-    elif numFmt == 'bullet':
-        return '• '
-    else:
-        val = str(idx)
-        
-    res = lvlText.replace(f'%{ilvl+1}', val).replace('%1', val).replace('%2', val)
-    if not res.endswith(' ') and not res.endswith('.'):
-        res += ' '
-    elif res.endswith('.'):
-        res += ' '
-    return res
 
 
 def import_raw_document(file_bytes, filename, output_diagram_dir):
@@ -852,50 +549,27 @@ def import_raw_document(file_bytes, filename, output_diagram_dir):
             if "camdex education" in p2_text or "trusted partner" in p2_text:
                 start_page = 3
                 
-        # Automatically detect and skip 3rd-party cover sheets (Save My Exams, PMT, generic repo covers)
-        if start_page == 0:
-            while start_page < min(2, len(doc)) and is_3rd_party_cover_page(doc, start_page):
-                start_page += 1
-                
         for p_idx in range(start_page, len(doc)):
             page = doc[p_idx]
             
-            # Robust table detection avoiding full-page frames
-            clean_tables = []
-            try:
-                tabs = page.find_tables()
-                for t in tabs.tables:
-                    t_h = t.bbox[3] - t.bbox[1]
-                    if t_h > page.rect.height * 0.55:
-                        # Full page frame detected - search inner drawing rects for genuine sub-tables
-                        for d in page.get_drawings():
-                            dr = d.get('rect')
-                            if dr and 30 < (dr[3] - dr[1]) < page.rect.height * 0.55 and (dr[2] - dr[0]) > 100:
-                                sub_tabs = page.find_tables(clip=fitz.Rect(dr))
-                                for st in sub_tabs.tables:
-                                    clean_tables.append(st)
-                    else:
-                        clean_tables.append(t)
-            except Exception:
-                clean_tables = []
-
-            tab_rects = [fitz.Rect(t.bbox) for t in clean_tables] if clean_tables else []
+            # Detect tables using PyMuPDF find_tables
+            tabs = page.find_tables()
+            tab_rects = [fitz.Rect(t.bbox) for t in tabs.tables] if tabs.tables else []
             
             page_items = []
             
-            # 1. Add Tables as High-Resolution Screenshots
-            if clean_tables:
-                for t in clean_tables:
+            # 1. Add Tables
+            if tabs.tables:
+                for t in tabs.tables:
                     t_box = fitz.Rect(t.bbox)
-                    clip_r = fitz.Rect(max(0, t_box.x0 - 2), max(0, t_box.y0 - 2), min(page.rect.width, t_box.x1 + 2), min(page.rect.height, t_box.y1 + 2))
-                    pix = page.get_pixmap(clip=clip_r, dpi=300)
-                    diagram_count += 1
-                    diag_name = f"table_{diagram_count}.png"
-                    diag_path = os.path.join(output_diagram_dir, diag_name)
-                    pix.save(diag_path)
-                    image_map[str(diagram_count)] = diag_path
-                    image_map[diag_name] = diag_path
-                    page_items.append((t_box.y0, "image", f"[diagram: {diagram_count}]"))
+                    df = t.extract()
+                    tbl_lines = []
+                    for row in df:
+                        cells = [str(c or '').strip().replace('\n', ' ') for c in row]
+                        tbl_lines.append("| " + " | ".join(cells) + " |")
+                    if tbl_lines:
+                        tbl_str = "\n".join(tbl_lines)
+                        page_items.append((t_box.y0, "table", tbl_str))
             
             # 2. Add Text Blocks (excluding text that falls inside table bounding boxes)
             blocks = page.get_text("blocks")
@@ -908,45 +582,27 @@ def import_raw_document(file_bytes, filename, output_diagram_dir):
                     continue
                 low = text.lower()
                 
-                # Strip 3rd party branding lines (e.g. PMT, SaveMyExams)
-                clean_b_text = strip_3rd_party_branding(text).strip()
-                if not clean_b_text:
-                    continue
-                
-                # Filter out isolated floating mark lines from margins
-                if re.match(r'^\s*(\(\d+\s*marks?\)|\[(?:\d+|Total:\s*\d+)\])\s*$', clean_b_text, re.IGNORECASE):
-                    continue
-                
-                # Metadata detection on first content page (clean board / subject only)
+                # Metadata detection on first content page
                 if p_idx == start_page:
-                    if "edexcel" in low and not any(w in low for w in ["mins", "questions", "easy", "score"]):
+                    if "edexcel" in low:
                         metadata["board"] = "EDX"
-                    elif "cambridge" in low and not any(w in low for w in ["mins", "questions", "easy", "score"]):
+                        metadata["curriculum"] = text
+                    elif "cambridge" in low:
                         metadata["board"] = "CMB"
-                    if (low.startswith("unit:") or low.startswith("unit ")) and len(clean_b_text) < 40:
-                        metadata["unit"] = clean_b_text.split(":", 1)[-1].strip() if ":" in clean_b_text else clean_b_text
+                        metadata["curriculum"] = text
+                    if "unit:" in low or low.startswith("unit "):
+                        metadata["unit"] = text.split(":", 1)[-1].strip() if ":" in text else text
+                    if "tutorial" in low or "tute" in low:
+                        metadata["tutorial"] = text
                     for subj in ["Computer Science", "Physics", "Chemistry", "Biology", "Mathematics", "English", "ICT", "Business", "Economics", "Accounting", "Science"]:
-                        if subj.lower() in low and not metadata["subject"] and len(low) < 30:
+                        if subj.lower() in low and not metadata["subject"]:
                             metadata["subject"] = subj
                             
-                # Skip header/footer repetitions, syllabus headers, and 3rd party cover/tracking lines
-                if ("cambridge igcse" in low or "edexcel igcse" in low or "cambridge (cie)" in low or 
-                    (low.startswith("unit:") and len(low) < 40) or 
-                    any(term in low for term in ["mins", "questions", "easy (", "medium (", "hard (", "total marks", "score tracker"])):
-                    continue
-                
-                # Check for single-row list box with multiple spaced items (e.g. bananas      a factory      goats      a risk taking investor)
-                spaced_items = re.split(r'[\t\xa0]{2,}|\s{3,}', clean_b_text)
-                spaced_items = [it.strip() for it in spaced_items if it.strip()]
-                if (2 <= len(spaced_items) <= 6 and 
-                    all(len(it) < 32 and len(it.split()) <= 5 for it in spaced_items) and 
-                    not any(it.endswith(('.', '?', '!', ':')) for it in spaced_items) and 
-                    not any(spaced_items[0].startswith(pfx) for pfx in ("A.", "B.", "1.", "2.", "Fig", "Total", "Topic"))):
-                    tbl_str = "| " + " | ".join(spaced_items) + " |"
-                    page_items.append((b[1], "table", tbl_str))
+                # Skip header/footer repetitions on subsequent pages
+                if p_idx > start_page and ("cambridge igcse" in low or "edexcel igcse" in low or (low.startswith("unit:") and len(low) < 40)):
                     continue
                     
-                page_items.append((b[1], "text", clean_b_text))
+                page_items.append((b[1], "text", text))
             
             # 3. Add Images
             page_images = page.get_images(full=True)
@@ -972,85 +628,48 @@ def import_raw_document(file_bytes, filename, output_diagram_dir):
             extracted_pages.append("\n\n".join(page_strs))
             
         full_text = "\n\n".join(extracted_pages)
-        return strip_3rd_party_branding(full_text), metadata, image_map
+        return full_text, metadata, image_map
         
     elif ext in [".docx", ".doc"] and docx is not None:
         doc = docx.Document(io.BytesIO(file_bytes))
-        num_map = build_docx_numbering_map(doc)
-        counters = {}
         diagram_count = 0
         extracted_elements = []
         
-        # Helper to extract images from a paragraph or drawing element
-        def extract_paragraph_images(p_elem):
-            nonlocal diagram_count
-            found_tags = []
-            blips = p_elem.xpath('.//*[local-name()="blip"]/@*[local-name()="embed"] | .//*[local-name()="imagedata"]/@*[local-name()="id"]')
-            seen_blips = set()
-            for rId in blips:
-                if rId in seen_blips:
-                    continue
-                seen_blips.add(rId)
-                if rId in doc.part.rels:
-                    part = doc.part.rels[rId].target_part
-                    if hasattr(part, "blob") and len(part.blob) > 2000:
-                        diagram_count += 1
-                        ext_name = os.path.splitext(part.partname)[1] or ".png"
-                        diag_name = f"diagram_{diagram_count}{ext_name}"
-                        diag_path = os.path.join(output_diagram_dir, diag_name)
-                        with open(diag_path, "wb") as f:
-                            f.write(part.blob)
-                        image_map[str(diagram_count)] = diag_path
-                        image_map[diag_name] = diag_path
-                        found_tags.append(f"[diagram: {diagram_count}]")
-            return found_tags
-
-        # Extract paragraphs, numbered lists, tables, and diagrams in true document order
+        # Extract images from docx parts
+        for rel in doc.part.rels.values():
+            if "image" in rel.target_ref:
+                img_part = rel.target_part
+                img_bytes = img_part.blob
+                if len(img_bytes) > 2500:
+                    diagram_count += 1
+                    ext_name = os.path.splitext(img_part.partname)[1] or ".png"
+                    diag_name = f"diagram_{diagram_count}{ext_name}"
+                    diag_path = os.path.join(output_diagram_dir, diag_name)
+                    with open(diag_path, "wb") as f:
+                        f.write(img_bytes)
+                    image_map[str(diagram_count)] = diag_path
+                    image_map[diag_name] = diag_path
+                    
+        # Extract paragraphs and tables
         for elem in doc.element.body:
             if elem.tag.endswith('p'):
                 p = docx.text.paragraph.Paragraph(elem, doc)
                 text = p.text.strip()
-                
-                # Check for Word List Numbering (w:numPr)
-                numPr = elem.xpath('./w:pPr/w:numPr')
-                if numPr and text:
-                    ilvl_list = numPr[0].xpath('./w:ilvl/@w:val')
-                    numId_list = numPr[0].xpath('./w:numId/@w:val')
-                    ilvl = numPr[0].xpath('./w:ilvl/@w:val')[0] if ilvl_list else '0'
-                    numId = numPr[0].xpath('./w:numId/@w:val')[0] if numId_list else '1'
-                    prefix = format_docx_num(num_map, counters, numId, ilvl)
-                    extracted_elements.append(prefix + text)
-                elif text:
+                if text:
                     extracted_elements.append(text)
-                
-                # Check for inline drawings/images after paragraph text
-                img_tags = extract_paragraph_images(elem)
-                for tag in img_tags:
-                    extracted_elements.append(tag)
-                    
             elif elem.tag.endswith('tbl'):
                 tbl = docx.table.Table(elem, doc)
-                raw_table_data = []
+                tbl_rows = []
                 for row in tbl.rows:
-                    seen_tc = set()
-                    row_cells = []
-                    for c in row.cells:
-                        if c._tc not in seen_tc:
-                            seen_tc.add(c._tc)
-                            row_cells.append(c.text.strip())
-                    if row_cells and any(row_cells):
-                        raw_table_data.append(row_cells)
-                
-                clean_unpacked = unpack_table_df(raw_table_data)
-                if clean_unpacked:
-                    tbl_lines = ["| " + " | ".join(r) + " |" for r in clean_unpacked if any(r)]
-                    extracted_elements.append("\n".join(tbl_lines))
+                    cells = [c.text.strip().replace("\n", " ") for c in row.cells]
+                    tbl_rows.append("| " + " | ".join(cells) + " |")
+                if tbl_rows:
+                    extracted_elements.append("\n".join(tbl_rows))
                     
         full_text = "\n\n".join(extracted_elements)
-        full_text = strip_3rd_party_branding(full_text)
         
         # Detect metadata
-        for l in extracted_elements[:15]:
+        for l in extracted_elements[:10]:
             low = l.lower()
             if "edexcel" in low:
                 metadata["board"] = "EDX"
@@ -1071,7 +690,6 @@ def import_raw_document(file_bytes, filename, output_diagram_dir):
     else:
         # Plain text
         text = file_bytes.decode("utf-8", errors="ignore")
-        text = strip_3rd_party_branding(text)
         return text, metadata, image_map
 
 
@@ -1246,18 +864,18 @@ def build_tutorial_pdf(
 
     title_main_style = ParagraphStyle(
         "TutMainTitle", parent=styles["Normal"],
-        fontName="Times-Bold", fontSize=20, leading=24,
-        alignment=TA_CENTER, textColor=text_color, spaceAfter=4
+        fontName="Times-Bold", fontSize=24, leading=28,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=14
     )
     unit_title_style = ParagraphStyle(
         "TutUnitTitle", parent=styles["Normal"],
-        fontName="Times-Bold", fontSize=18, leading=22,
-        alignment=TA_CENTER, textColor=text_color, spaceAfter=4
+        fontName="Times-Bold", fontSize=24, leading=28,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=14
     )
     tutorial_sub_style = ParagraphStyle(
         "TutSubTitle", parent=styles["Normal"],
-        fontName="Times-Bold", fontSize=13, leading=16,
-        alignment=TA_CENTER, textColor=text_color, spaceAfter=8
+        fontName="Times-Bold", fontSize=15, leading=19,
+        alignment=TA_CENTER, textColor=text_color, spaceAfter=24
     )
     section_heading_style = ParagraphStyle(
         "TutSectionHeading", parent=styles["Normal"],
@@ -1528,13 +1146,10 @@ def build_tutorial_pdf(
         story.append(PageBreak())
 
     # ==================== PAGE 4+: QUESTIONS & PASSAGES ====================
-    if curriculum_title:
-        story.append(Paragraph(f"<u><b>{clean_xml_text(curriculum_title)}</b></u>", title_main_style))
-    if unit_title:
-        story.append(Paragraph(f"<u><b>Unit: {clean_xml_text(unit_title)}</b></u>", unit_title_style))
-    if tutorial_num:
-        story.append(Paragraph(f"<b>{clean_xml_text(tutorial_num)}</b>", tutorial_sub_style))
-    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"<u><b>{clean_xml_text(curriculum_title)}</b></u>", title_main_style))
+    story.append(Paragraph(f"<u><b>Unit: {clean_xml_text(unit_title)}</b></u>", unit_title_style))
+    story.append(Paragraph(f"<b>{clean_xml_text(tutorial_num)}</b>", tutorial_sub_style))
+    story.append(Spacer(1, 6))
 
     def resolve_image_path(ref_key):
         if not image_map:
@@ -1550,6 +1165,8 @@ def build_tutorial_pdf(
         for k, v in image_map.items():
             if norm_ref in k.lower() or norm_ref in os.path.basename(v).lower():
                 return v
+        if len(image_map) > 0:
+            return list(image_map.values())[0]
         return None
 
     has_started_content = False
@@ -1630,104 +1247,16 @@ def build_tutorial_pdf(
             q_text = block.get("text", "")
             base_q_text, mark = format_marks_in_text(q_text)
             
-            # Extract any marks attached to options or stem and clean them
-            clean_options = []
-            for letter, opt_text in block.get("options", []):
-                clean_opt, opt_mark = format_marks_in_text(opt_text)
-                if not mark and opt_mark:
-                    mark = opt_mark
-                clean_options.append((letter, clean_opt))
-
             q_html = f"<b>{disp_num}.</b> &nbsp;{clean_xml_text(base_q_text)}"
             if mark:
-                q_para = Paragraph(q_html, q_main_style)
-                m_para = Paragraph(f"<b>{clean_xml_text(mark)}</b>", mark_style)
-                main_q_flowable = Table([[q_para, m_para]], colWidths=[CONTENT_WIDTH - 48.0, 48.0], hAlign='LEFT')
-                main_q_flowable.setStyle(TableStyle([
-                    ('LEFTPADDING', (0,0), (-1,-1), 0),
-                    ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                    ('TOPPADDING', (0,0), (-1,-1), 0),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                    ('ALIGN', (1,0), (1,0), 'RIGHT'),
-                ]))
-            else:
-                main_q_flowable = Paragraph(q_html, q_main_style)
+                q_html += f" &nbsp; <b>{clean_xml_text(mark)}</b>"
+
+            main_q_para = Paragraph(q_html, q_main_style)
 
             # MCQ Options handling
-            if clean_options:
-                if not mark:
-                    mark = "[1]"
-                
-                # Re-generate main_q_flowable with right-aligned mark
-                q_para = Paragraph(q_html, q_main_style)
-                m_para = Paragraph(f"<b>{clean_xml_text(mark)}</b>", mark_style)
-                main_q_flowable = Table([[q_para, m_para]], colWidths=[CONTENT_WIDTH - 48.0, 48.0], hAlign='LEFT')
-                main_q_flowable.setStyle(TableStyle([
-                    ('LEFTPADDING', (0,0), (-1,-1), 0),
-                    ('RIGHTPADDING', (0,0), (-1,-1), 0),
-                    ('TOPPADDING', (0,0), (-1,-1), 0),
-                    ('BOTTOMPADDING', (0,0), (-1,-1), 0),
-                    ('VALIGN', (0,0), (-1,-1), 'TOP'),
-                    ('ALIGN', (1,0), (1,0), 'RIGHT'),
-                ]))
-
-                opt_flowables = [main_q_flowable]
-                
-                # Render any intermediate elements like list box, table or diagram before options
-                if block.get("elements"):
-                    for elem in block["elements"]:
-                        e_type = elem.get("type")
-                        if e_type == "table":
-                            raw_rows = parse_markdown_table(elem["rows"])
-                            if raw_rows:
-                                col_cnt = max(len(r) for r in raw_rows)
-                                col_w = min(460.0 / col_cnt, 180.0)
-                                col_widths = [col_w] * col_cnt
-                                t_data = []
-                                for r_idx, row in enumerate(raw_rows):
-                                    r_cells = []
-                                    row_padded = row + [''] * (col_cnt - len(row))
-                                    for cell in row_padded:
-                                        st_cell = tbl_hdr_style if (r_idx == 0 and len(raw_rows) > 1) else tbl_cell_style
-                                        r_cells.append(Paragraph(clean_xml_text(cell), st_cell))
-                                    t_data.append(r_cells)
-                                t_obj = Table(t_data, colWidths=col_widths, hAlign='CENTER')
-                                t_obj.setStyle(TableStyle([
-                                    ('GRID', (0,0), (-1,-1), 0.7, COLOR_PRIMARY),
-                                    ('BACKGROUND', (0,0), (-1,0), COLOR_TABLE_HEADER if len(raw_rows) > 1 else colors.white),
-                                    ('TOPPADDING', (0,0), (-1,-1), 5),
-                                    ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-                                    ('LEFTPADDING', (0,0), (-1,-1), 6),
-                                    ('RIGHTPADDING', (0,0), (-1,-1), 6),
-                                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                                ]))
-                                opt_flowables.append(Spacer(1, 4))
-                                opt_flowables.append(t_obj)
-                                opt_flowables.append(Spacer(1, 4))
-                        elif e_type == "image":
-                            ref = elem.get("ref", "")
-                            caption = elem.get("caption", "")
-                            img_path = resolve_image_path(ref)
-                            if img_path and os.path.exists(img_path):
-                                try:
-                                    pil_img = Image.open(img_path)
-                                    img_w, img_h = pil_img.size
-                                    pt_w = img_w * (72.0 / 300.0) if img_w > 450 else float(img_w)
-                                    pt_h = img_h * (72.0 / 300.0) if img_w > 450 else float(img_h)
-                                    max_w = CONTENT_WIDTH - 20.0
-                                    max_h = 320.0
-                                    scale = min(max_w / pt_w if pt_w > max_w else 1.0, max_h / pt_h if pt_h > max_h else 1.0)
-                                    w, h = pt_w * scale, pt_h * scale
-                                    opt_flowables.append(Spacer(1, 4))
-                                    opt_flowables.append(PlatypusImage(img_path, width=w, height=h, hAlign='CENTER'))
-                                    if caption:
-                                        opt_flowables.append(Paragraph(f"<i>{clean_xml_text(caption)}</i>", caption_style))
-                                    opt_flowables.append(Spacer(1, 4))
-                                except Exception:
-                                    pass
-
-                for letter, opt_text in clean_options:
+            if block.get("options"):
+                opt_flowables = [main_q_para]
+                for letter, opt_text in block["options"]:
                     opt_html = f"<b>{letter}.</b> &nbsp;{clean_xml_text(opt_text)}"
                     opt_flowables.append(Paragraph(opt_html, opt_style))
                 opt_flowables.append(Spacer(1, 4))
@@ -1765,11 +1294,9 @@ def build_tutorial_pdf(
                         stext = elem.get("text", "")
                         base_stext, mark = format_marks_in_text(stext)
                         
-                        # Check if subpart text is essentially an answer dotted line e.g. "(a) ......" or "(a) d = ........ cm [1]"
-                        if not base_stext or "..." in base_stext or "___" in base_stext or set(base_stext).issubset(set(". _-")):
-                            pref, unit, line_mark = parse_dotted_line_details(base_stext)
-                            full_pref = f"({lbl}) {pref}".strip() if pref else f"({lbl})"
-                            structured_flowables.append(DottedAnswerLine(prefix=full_pref, unit=unit, left_indent=24, color=text_color, mark=line_mark or mark))
+                        # Check if subpart text is essentially an answer dotted line e.g. "(a) ......"
+                        if not base_stext or base_stext.startswith("...") or base_stext.startswith("___") or set(base_stext).issubset(set(". _-")):
+                            structured_flowables.append(NumberedDottedAnswerLine(num_str=f"({lbl})", left_indent=24, color=text_color, mark=mark))
                         else:
                             sub_html = f"<b>({lbl})</b> &nbsp;{clean_xml_text(base_stext)}"
                             if mark:
@@ -1793,10 +1320,8 @@ def build_tutorial_pdf(
                         base_stext, mark = format_marks_in_text(stext)
                         
                         # Check if sub-item is essentially a numbered dotted line e.g. "1. ............. [1]"
-                        if not base_stext or "..." in base_stext or "___" in base_stext or set(base_stext).issubset(set(". _-")):
-                            pref, unit, line_mark = parse_dotted_line_details(base_stext)
-                            full_pref = f"{num}. {pref}".strip() if pref else f"{num}."
-                            structured_flowables.append(DottedAnswerLine(prefix=full_pref, unit=unit, left_indent=38, color=text_color, mark=line_mark or mark))
+                        if not base_stext or base_stext.startswith("...") or base_stext.startswith("___") or set(base_stext).issubset(set(". _-")):
+                            structured_flowables.append(NumberedDottedAnswerLine(num_str=f"{num}.", left_indent=24, color=text_color, mark=mark))
                         else:
                             item_html = f"<b>{num}.</b> &nbsp;{clean_xml_text(base_stext)}"
                             if mark:
@@ -1816,8 +1341,8 @@ def build_tutorial_pdf(
                     
                     elif e_type == "dotted_line":
                         d_text = elem["text"]
-                        pref, unit, mark = parse_dotted_line_details(d_text)
-                        structured_flowables.append(DottedAnswerLine(prefix=pref, unit=unit, left_indent=24, color=text_color, mark=mark))
+                        _, mark = format_marks_in_text(d_text)
+                        structured_flowables.append(DottedAnswerLine(left_indent=24, color=text_color, mark=mark))
                     
                     elif e_type == "total_marks":
                         structured_flowables.append(Paragraph(f"<b>{clean_xml_text(elem['text'])}</b>", mark_style))
@@ -1831,15 +1356,11 @@ def build_tutorial_pdf(
                         if img_path and os.path.exists(img_path):
                             try:
                                 im = Image.open(img_path)
-                                img_w, img_h = im.size
-                                pt_w = img_w * (72.0 / 300.0) if img_w > 450 else float(img_w)
-                                pt_h = img_h * (72.0 / 300.0) if img_w > 450 else float(img_h)
-                                max_w = CONTENT_WIDTH - 20.0
-                                max_h = 320.0
-                                scale = min(max_w / pt_w if pt_w > max_w else 1.0, max_h / pt_h if pt_h > max_h else 1.0)
-                                w, h = pt_w * scale, pt_h * scale
+                                w, h = im.size
+                                max_w, max_h = 420.0, 200.0
+                                scale = min(max_w / w, max_h / h, 1.0)
                                 structured_flowables.append(Spacer(1, 6))
-                                structured_flowables.append(PlatypusImage(img_path, width=w, height=h, hAlign='CENTER'))
+                                structured_flowables.append(PlatypusImage(img_path, width=w*scale, height=h*scale, hAlign='CENTER'))
                                 if elem.get("caption"):
                                     structured_flowables.append(Paragraph(clean_xml_text(elem["caption"]), fig_caption_style))
                                 structured_flowables.append(Spacer(1, 6))
@@ -1877,12 +1398,12 @@ def build_tutorial_pdf(
             # Prevent orphan question stems: Keep main question + first 1-2 elements together
             if structured_flowables:
                 lead_count = min(len(structured_flowables), 2)
-                lead_group = [main_q_flowable] + structured_flowables[:lead_count]
+                lead_group = [main_q_para] + structured_flowables[:lead_count]
                 story.append(KeepTogether(lead_group))
                 for rem_flowable in structured_flowables[lead_count:]:
                     story.append(rem_flowable)
             else:
-                story.append(main_q_flowable)
+                story.append(main_q_para)
 
             story.append(Spacer(1, 6))
 
@@ -2038,11 +1559,6 @@ def build_direct_raw_tutorial_pdf(
             p2_txt = doc_src[1].get_text("text").lower()
             if "camdex education is your trusted" in p2_txt or "trusted partner in igcse" in p2_txt:
                 start_page = 3
-                
-        # Automatically detect and skip 3rd-party cover sheets (Save My Exams, PMT, generic repo covers)
-        if start_page == 0:
-            while start_page < min(2, len(doc_src)) and is_3rd_party_cover_page(doc_src, start_page):
-                start_page += 1
         
         # Trim accidental trailing empty blank pages at the end of the document
         end_page = len(doc_src)
@@ -2052,41 +1568,6 @@ def build_direct_raw_tutorial_pdf(
                 end_page -= 1
             else:
                 break
-                
-        # De-brand 3rd party watermarks & URLs across source question pages
-        skip_patterns = [
-            r'physicsandmathstutor(?:\.com)?',
-            r'physics\s*(?:and|&)\s*maths\s*tutor',
-            r'pmt\.education',
-            r'save\s*my\s*exams',
-            r'savemyexams(?:\.co\.uk|\.com)?',
-            r'head\s+to\s+savemyexams',
-            r'for\s+more\s+awesome\s+.*resources',
-            r'get\s+more\s+and\s+ace\s+your\s+exams',
-            r'scan\s+here\s+to\s+return\s+to\s+the\s+course',
-            r'©\s*\d{4}\s*save\s*my\s*exams',
-            r'paper\s+1\s+and\s+2\s+question\s+paper',
-            r'topic\s+based\s+papers\.?\s+source:\s*online',
-            r'topic\s+based\s+papers',
-            r'source:\s*online',
-            r'questions\s+are\s+applicable\s+for\s+both\s+core',
-            r'0625\/\d+\/[A-Z]\/[A-Z]\/\d+',
-            r'9701\/\d+\/[A-Z]\/[A-Z]\/\d+',
-            r'0478\/\d+\/[A-Z]\/[A-Z]\/\d+',
-            r'4CP0\/\d+\/[A-Z]\/[A-Z]\/\d+',
-            r'rumesh\s+vishwanatha'
-        ]
-        for pno in range(start_page, end_page):
-            sp = doc_src[pno]
-            has_redact = False
-            for b in sp.get_text("blocks"):
-                txt = b[4].strip().lower()
-                if any(re.search(pat, txt) for pat in skip_patterns):
-                    r = fitz.Rect(b[:4])
-                    sp.add_redact_annot(r, fill=(1, 1, 1))
-                    has_redact = True
-            if has_redact:
-                sp.apply_redactions()
                 
         question_count_pages = end_page - start_page
         

@@ -214,15 +214,19 @@ SUBJECT_LIST = [
     "Accounting", "English"
 ]
 
-# Apply clean board/subject metadata only if valid
+# Apply any pending detected metadata BEFORE sidebar widgets instantiate
 if "pending_detected_meta" in st.session_state:
     meta = st.session_state.pop("pending_detected_meta")
     if meta.get("board"):
         st.session_state["exam_board_select"] = "Edexcel (EDX)" if meta["board"] == "EDX" else "Cambridge (CMB)"
     if meta.get("subject") and meta["subject"] in SUBJECT_LIST:
         st.session_state["subject_select"] = meta["subject"]
-    if meta.get("unit") and len(meta["unit"]) < 40 and not any(w in meta["unit"].lower() for w in ["mins", "questions", "easy", "score"]):
+    if meta.get("unit"):
         st.session_state["unit_title_input"] = meta["unit"]
+    if meta.get("tutorial"):
+        st.session_state["tut_title_input"] = meta["tutorial"]
+    if meta.get("curriculum"):
+        st.session_state["curr_title_input"] = meta["curriculum"]
 
 # ----------------- SIDEBAR CONTROLS -----------------
 with st.sidebar:
@@ -250,7 +254,7 @@ with st.sidebar:
             st.session_state["subject_select"] = "Computer Science"
         selected_subject = st.selectbox("Subject", SUBJECT_LIST, key="subject_select")
 
-    if "unit_title_input" not in st.session_state or any(w in st.session_state.get("unit_title_input", "").lower() for w in ["mins", "questions", "easy", "total marks"]):
+    if "unit_title_input" not in st.session_state:
         st.session_state["unit_title_input"] = "Communication & the Internet"
     unit_title = st.text_input("Unit / Topic Title", key="unit_title_input")
 
@@ -259,7 +263,7 @@ with st.sidebar:
     tutorial_number = st.text_input("Tutorial # / Title", key="tut_title_input")
     
     curriculum_default = "Edexcel IGCSE (2026/2027)" if board_code == "EDX" else "Cambridge IGCSE O/L"
-    if "curr_title_input" not in st.session_state or any(w in st.session_state.get("curr_title_input", "").lower() for w in ["mins", "questions", "easy", "total marks", "savemyexams"]):
+    if "curr_title_input" not in st.session_state:
         st.session_state["curr_title_input"] = curriculum_default
     curriculum_title = st.text_input("Curriculum Header", key="curr_title_input")
 
@@ -496,235 +500,94 @@ if custom_cover_upload:
         f.write(custom_cover_upload.getbuffer())
 
 # ----------------- MAIN WORKSPACE -----------------
-main_col, preview_col = st.columns([1.15, 0.85])
+main_col, preview_col = st.columns([1.1, 0.9])
 
 with main_col:
-    # Top Guidance Banner: DOCX vs PDF
-    # st.markdown(
-    #     """
-    #     <div style="background: linear-gradient(135deg, #f0fdf4 0%, #e0f2fe 100%); border: 1.5px solid #38bdf8; border-radius: 12px; padding: 14px 18px; margin-bottom: 18px;">
-    #         <div style="font-size: 14px; font-weight: 800; color: #0369a1; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-    #             💡 WHICH FORMAT IS BEST FOR YOUR PAPER?
-    #         </div>
-    #         <div style="font-size: 12.5px; color: #334155; line-height: 1.5;">
-    #             <b style="color: #0f766e;">📄 Word (.docx) or Clean Text (Recommended):</b> Best for <b>100% perfect formatting</b>. Every question is re-typeset from scratch with exact vector dashed lines spanning to the right margin, right-aligned mark brackets <code>[1]</code>, <code>[2]</code>, beautiful CAMDEX blue tables, and <b>completely strips all Physics & Maths Tutor / Save My Exams watermarks</b>.<br/>
-    #             <b style="color: #1e40af;">📑 PDF (.pdf):</b> You can either <b>Auto-Extract & Re-Typeset</b> in the Studio below, or use <b>Fast Past Paper Converter</b> to de-brand and stamp official CAMDEX branding directly onto existing past paper sheets.
-    #         </div>
-    #     </div>
-    #     """,
-    #     unsafe_allow_html=True
-    # )
+    st.markdown("##### 1. Upload Raw Tutorial / Past Paper (.pdf, .docx, .txt)")
+    st.info("Upload your raw tutor document here. It will convert directly into the official CAMDEX Publication.")
     
-    studio_tab, direct_tab = st.tabs([
-        "1. Format & Re-Typeset Studio",
-        "2. Direct Past Paper PDF Converter & De-Brander"
-    ])
-
-    # ----------------- TAB 1: FORMAT & RE-TYPESET STUDIO -----------------
-    with studio_tab:
-        st.markdown("##### Upload Document to Format & Re-typeset")
-        st.caption("Upload raw Word (.docx), PDF (.pdf), or Text. The AI engine extracts questions, strips 3rd-party watermarks, aligns dotted answer lines, and formats everything into official CAMDEX style.")
-        
-        studio_file = st.file_uploader(
-            "Upload Document (.docx, .pdf, .txt)",
-            type=["docx", "doc", "pdf", "txt"],
-            key="studio_file_uploader",
-            help="Extracts and re-typesets all questions with perfect spacing, vector dotted lines, and clean tables."
-        )
-        
-        temp_diag_dir = os.path.join(session_temp_dir, "diagrams")
-        os.makedirs(temp_diag_dir, exist_ok=True)
-        
-        # Load and extract content into session state
-        if studio_file is not None:
-            f_key = f"studio_{studio_file.name}_{studio_file.size}"
-            if st.session_state.get("last_studio_file") != f_key:
-                with st.spinner("Extracting questions, diagrams, tables, and stripping 3rd-party watermarks..."):
-                    ext_text, detected_meta, ext_images = pdf_generator.import_raw_document(
-                        studio_file.getvalue(),
-                        studio_file.name,
-                        temp_diag_dir
-                    )
-                    st.session_state["last_studio_file"] = f_key
-                    st.session_state["studio_raw_text"] = ext_text
-                    st.session_state["studio_image_map"] = ext_images
-                    st.session_state["pending_detected_meta"] = detected_meta
-                    st.rerun()
-
-        # If we have extracted content or user manual input
-        current_text = st.session_state.get("studio_raw_text", "")
-        
-        # Parse questions to show stats & live editor
-        if current_text:
-            try:
-                parsed_data = pdf_generator.parse_input_text(current_text)
-                q_list = parsed_data.get("questions", [])
-                total_q_found = len(q_list)
-            except Exception:
-                q_list = []
-                total_q_found = 0
-                
-            img_map = st.session_state.get("studio_image_map", {})
-            
-            # Status summary bar
-            st.markdown(
-                f"""
-                <div style="display: flex; gap: 10px; margin: 10px 0 14px 0;">
-                    <span class="feature-tag" style="background: #e0f2fe; color: #0369a1; font-size: 13px; padding: 4px 10px;">📋 {total_q_found} Questions Extracted</span>
-                    <span class="feature-tag" style="background: #f0fdf4; color: #166534; font-size: 13px; padding: 4px 10px;">🖼️ {len(img_map)} Diagrams Found</span>
-                    <span class="feature-tag" style="background: #fef3c7; color: #92400e; font-size: 13px; padding: 4px 10px;">🛡️ 3rd-Party Watermarks Stripped</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-            # Question Container & Live Editor
-            with st.expander("📝 Live Question Studio & Editor (Inspect / Customize / Edit Questions)", expanded=False):
-                st.caption("You can edit question stems, add/remove dotted answer lines, adjust MCQ options, or insert diagrams below:")
-                edited_text = st.text_area(
-                    "Raw Structured Content",
-                    value=current_text,
-                    height=280,
-                    key="studio_text_editor"
+    direct_uploaded_file = st.file_uploader(
+        "Upload Raw Tutor Document",
+        type=["pdf", "docx", "doc", "txt"],
+        key="direct_raw_tute_uploader",
+        help="Transforms raw PDFs, Word documents, or worksheets into official CAMDEX format."
+    )
+    
+    # Auto metadata extraction on upload
+    if direct_uploaded_file is not None:
+        f_key = f"direct_{direct_uploaded_file.name}_{direct_uploaded_file.size}"
+        if st.session_state.get("last_direct_doc") != f_key:
+            temp_diag_dir = os.path.join(session_temp_dir, "diagrams")
+            os.makedirs(temp_diag_dir, exist_ok=True)
+            with st.spinner("Analyzing document metadata and extracting structure..."):
+                _, detected_meta, _ = pdf_generator.import_raw_document(
+                    direct_uploaded_file.getvalue(),
+                    direct_uploaded_file.name,
+                    temp_diag_dir
                 )
-                if edited_text != current_text:
-                    st.session_state["studio_raw_text"] = edited_text
-                    current_text = edited_text
-                    
-            st.markdown(
-                f"""
-                <div style="background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;">
-                    <div style="font-size: 12.5px; font-weight: 700; color: #1A4199; margin-bottom: 4px;">TARGET PUBLICATION DETAILS</div>
-                    <div style="font-size: 13px; color: #1e293b;">
-                        <b>Subject:</b> {selected_subject} ({board_code}) &nbsp;|&nbsp; 
-                        <b>Topic:</b> {unit_title} &nbsp;|&nbsp; 
-                        <b>Tutorial:</b> {tutorial_number}<br/>
-                        <b>Curriculum:</b> {curriculum_title} &nbsp;|&nbsp;
-                        <b>Teacher:</b> {teacher_name}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-            if st.button("🚀 Re-Typeset & Publish Formatted Publication", type="primary", width="stretch", key="btn_build_studio"):
-                try:
-                    with st.spinner("Compiling high-resolution vector PDF with exact formatting, vector dotted lines, and CAMDEX branding..."):
-                        pdf_bytes, page_count = pdf_generator.build_tutorial_pdf(
-                            raw_text=current_text,
-                            subject=selected_subject,
-                            board=board_code,
-                            unit_title=unit_title,
-                            tutorial_num=tutorial_number,
-                            curriculum_title=curriculum_title,
-                            include_intro=include_intro,
-                            include_teacher=include_teacher,
-                            teacher_name=teacher_name,
-                            teacher_qualifications=teacher_qual,
-                            teacher_subject=teacher_subject,
-                            teacher_message=teacher_msg,
-                            teacher_photo_path=final_teacher_photo_path,
-                            custom_cover_path=temp_cover_path,
-                            image_map=img_map,
-                            font_color_hex="#1A4199",
-                            watermark_opacity=0.22
-                        )
-                        st.session_state["generated_pdf"] = pdf_bytes
-                        st.session_state["pdf_q_count"] = page_count
-                        st.session_state["pdf_source_type"] = "ReTypesetStudio"
-                        st.session_state["preview_page_idx"] = 0
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Compilation error: {str(e)}")
-        else:
-            st.info("Upload a Word document (.docx), PDF past paper (.pdf), or paste raw questions to start formatting.")
-            
-            # Allow direct paste as an alternative
-            with st.expander("Or Paste Raw Question Text Manually"):
-                pasted_input = st.text_area(
-                    "Paste questions text here",
-                    height=180,
-                    placeholder="1. What is the definition of...\nA. Option 1\nB. Option 2\n...",
-                    key="manual_text_paste"
-                )
-                if st.button("Load Pasted Text", key="btn_load_pasted"):
-                    if pasted_input.strip():
-                        st.session_state["studio_raw_text"] = pasted_input.strip()
-                        st.rerun()
-
-    # ----------------- TAB 2: DIRECT PAST PAPER PDF CONVERTER -----------------
-    with direct_tab:
-        st.markdown("##### Direct Past Paper PDF Converter & De-Brander")
-        st.caption("Upload existing past paper PDFs (e.g. from Physics & Maths Tutor, Save My Exams, Cambridge/Edexcel past paper repositories). The system auto-redacts 3rd-party watermarks/URLs, recolors all vector lines & text to CAMDEX Deep Blue, and stamps official covers, double borders, watermark seals, and footers.")
-        
-        direct_uploaded_file = st.file_uploader(
-            "Upload Past Paper PDF",
-            type=["pdf"],
-            key="direct_past_paper_uploader",
-            help="Transforms complex past paper PDFs with diagrams directly into official CAMDEX format."
-        )
-        
-        if direct_uploaded_file is not None:
-            f_key = f"direct_{direct_uploaded_file.name}_{direct_uploaded_file.size}"
-            if st.session_state.get("last_direct_doc") != f_key:
                 st.session_state["last_direct_doc"] = f_key
+                st.session_state["pending_detected_meta"] = detected_meta
                 st.session_state["auto_generate_direct"] = True
                 st.rerun()
             
-            st.success(f"Loaded: **{direct_uploaded_file.name}** ({direct_uploaded_file.size / 1024:.1f} KB)")
-        
-        st.markdown(
-            f"""
-            <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 16px; margin: 12px 0;">
-                <div style="font-size: 12.5px; font-weight: 700; color: #166534; margin-bottom: 4px;">DOCUMENT SPECIFICATIONS</div>
-                <div style="font-size: 13px; color: #1e293b;">
-                    <b>Subject:</b> {selected_subject} ({board_code}) &nbsp;|&nbsp; 
-                    <b>Topic:</b> {unit_title} &nbsp;|&nbsp; 
-                    <b>Tutorial:</b> {tutorial_number}<br/>
-                    <b>Curriculum:</b> {curriculum_title} &nbsp;|&nbsp;
-                    <b>Teacher:</b> {teacher_name}
-                </div>
+        st.success(f"Loaded: **{direct_uploaded_file.name}** ({direct_uploaded_file.size / 1024:.1f} KB)")
+    
+    st.markdown("---")
+    st.markdown("##### 2. Document Settings Summary")
+    
+    st.markdown(
+        f"""
+        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;">
+            <div style="font-size: 13px; font-weight: 700; color: #166534; margin-bottom: 4px;">DOCUMENT SPECIFICATIONS</div>
+            <div style="font-size: 13.5px; color: #1e293b;">
+                <b>Subject:</b> {selected_subject} ({board_code}) &nbsp;|&nbsp; 
+                <b>Topic:</b> {unit_title} &nbsp;|&nbsp; 
+                <b>Tutorial:</b> {tutorial_number}<br/>
+                <b>Curriculum:</b> {curriculum_title} &nbsp;|&nbsp;
+                <b>Teacher:</b> {teacher_name}
             </div>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        generate_direct_btn = st.button("⚡ Convert, De-Brand & Publish PDF", type="primary", width="stretch", key="btn_direct_convert")
-        
-        should_run_direct = generate_direct_btn or (st.session_state.pop("auto_generate_direct", False) and direct_uploaded_file is not None)
-        
-        if should_run_direct:
-            if direct_uploaded_file is None:
-                st.error("Please upload a past paper PDF document first.")
-            else:
-                try:
-                    with st.spinner("De-branding 3rd-party watermarks, recoloring to CAMDEX Royal Blue, and stamping official publication..."):
-                        pdf_bytes, page_count = pdf_generator.build_direct_raw_tutorial_pdf(
-                            file_bytes=direct_uploaded_file.getvalue(),
-                            filename=direct_uploaded_file.name,
-                            subject=selected_subject,
-                            board=board_code,
-                            unit_title=unit_title,
-                            tutorial_num=tutorial_number,
-                            curriculum_title=curriculum_title,
-                            include_intro=include_intro,
-                            include_teacher=include_teacher,
-                            teacher_name=teacher_name,
-                            teacher_qualifications=teacher_qual,
-                            teacher_subject=teacher_subject,
-                            teacher_message=teacher_msg,
-                            teacher_photo_path=final_teacher_photo_path,
-                            custom_cover_path=temp_cover_path,
-                            font_color_hex="#1A4199",
-                            watermark_opacity=0.20
-                        )
-                        st.session_state["generated_pdf"] = pdf_bytes
-                        st.session_state["pdf_q_count"] = page_count
-                        st.session_state["pdf_source_type"] = "DirectRawTute"
-                        st.session_state["preview_page_idx"] = 0
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Direct conversion error: {str(e)}")
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    generate_direct_btn = st.button("Convert & Publish Document", type="primary", width="stretch")
+
+# Handle Direct Auto-Generation or Button Trigger
+should_run_direct = generate_direct_btn or (st.session_state.pop("auto_generate_direct", False) and direct_uploaded_file is not None)
+
+if should_run_direct:
+    if direct_uploaded_file is None:
+        st.error("Please upload a raw tutorial document (PDF, Word DOCX, or TXT) first.")
+    else:
+        try:
+            with st.spinner("Converting raw document directly to official CAMDEX publication..."):
+                pdf_bytes, page_count = pdf_generator.build_direct_raw_tutorial_pdf(
+                    file_bytes=direct_uploaded_file.getvalue(),
+                    filename=direct_uploaded_file.name,
+                    subject=selected_subject,
+                    board=board_code,
+                    unit_title=unit_title,
+                    tutorial_num=tutorial_number,
+                    curriculum_title=curriculum_title,
+                    include_intro=include_intro,
+                    include_teacher=include_teacher,
+                    teacher_name=teacher_name,
+                    teacher_qualifications=teacher_qual,
+                    teacher_subject=teacher_subject,
+                    teacher_message=teacher_msg,
+                    teacher_photo_path=final_teacher_photo_path,
+                    custom_cover_path=temp_cover_path,
+                    image_map=st.session_state.get("active_diagram_map", {}),
+                    font_color_hex="#1A4199",
+                    watermark_opacity=0.20
+                )
+                st.session_state["generated_pdf"] = pdf_bytes
+                st.session_state["pdf_q_count"] = page_count
+                st.session_state["pdf_source_type"] = "DirectRawTute"
+                st.session_state["preview_page_idx"] = 0
+        except Exception as e:
+            st.error(f"Direct conversion error: {str(e)}")
 
 @st.cache_data(max_entries=10)
 def get_pdf_total_pages(pdf_bytes):
